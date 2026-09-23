@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt pyinstaller
+
+      - name: Frontend build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Backend checks
+        run: |
+          pip install ruff mypy
+          ruff check backend/
+          mypy backend/
+          pytest backend/tests/ -q
+
+      - name: Build exe (PyInstaller)
+        run: |
+          cd backend
+          python -m PyInstaller BiziBox.spec --noconfirm
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: backend/dist/BiziBox.exe
+          generate_release_notes: true
