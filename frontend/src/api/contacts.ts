@@ -58,6 +58,9 @@ export const contactApi = {
   unblock: (id: number) =>
     request<Contact>(`/contacts/${id}/unblock`, { method: 'POST', _entityId: id }),
 
+  setSpam: (id: number, spam: boolean) =>
+    request<Contact>(`/contacts/${id}/set-spam?spam=${spam}`, { method: 'POST', _entityId: id }),
+
   bulkDelete: (ids: number[]) =>
     request<{ deleted: number }>('/contacts/bulk-delete', {
       method: 'POST',
@@ -124,7 +127,7 @@ export const contactApi = {
 
   exportCsv: (ids?: number[]) => {
     const qs = ids?.length ? `?ids=${ids.join(',')}` : ''
-    return request<string>(`/contacts/export${qs}`)
+    return request<string>(`/contacts/export${qs}`, { _textResponse: true })
   },
 
   importCsv: (file: File) => {

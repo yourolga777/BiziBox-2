@@ -30,19 +30,14 @@ export default function ContactQuickActions({ contact }: { contact: Contact }) {
 
   const toggleSpam = () => {
     const isSpam = contact.life_sphere === 'spam'
-    updateContact.mutate({
-      id: contact.id,
-      data: isSpam
-        ? { life_sphere: 'personal', folder_id: null }
-        : { life_sphere: 'spam', folder_id: null },
-    }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['messages'] })
-        queryClient.invalidateQueries({ queryKey: ['inbox'] })
-        queryClient.invalidateQueries({ queryKey: ['feed'] })
-        queryClient.invalidateQueries({ queryKey: ['threads'] })
-      },
-    })
+    contactApi.setSpam(contact.id, !isSpam).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] })
+      queryClient.invalidateQueries({ queryKey: ['inbox'] })
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
+      queryClient.invalidateQueries({ queryKey: ['threads'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      queryClient.invalidateQueries({ queryKey: ['contact', contact.id] })
+    }).catch(() => {})
   }
 
   const toggleBlock = async () => {

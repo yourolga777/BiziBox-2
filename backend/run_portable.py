@@ -11,6 +11,7 @@ Telegram/proxy значения.
 
 import os
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -19,6 +20,7 @@ from pathlib import Path
 
 HOST = "127.0.0.1"
 PORT = 7910
+PORT_RANGE = range(7910, 7926)
 BASE_URL = f"http://{HOST}:{PORT}"
 
 # Предзаполненные значения. api_id/api_hash принадлежат приложению, а не
@@ -73,6 +75,27 @@ def _ensure_env_file() -> None:
     env_path.write_text(content, encoding="utf-8")
 
 
+def _pick_free_port() -> int:
+    """Первый свободный порт из PORT_RANGE.
+
+    Порт может быть занят другим инстансом BiziBox/IziBox или любым
+    сторонним процессом — чтобы никого не трогать, выбираем свободный.
+
+    Важно: без SO_REUSEADDR — на Windows эта опция позволяет забиндить
+    сокет на уже занятый порт, и проба вернёт ложноположительный результат.
+    """
+    for port in PORT_RANGE:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind((HOST, port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(
+        f"Нет свободного порта в диапазоне {PORT_RANGE.start}-{PORT_RANGE.stop - 1}"
+    )
+
+
 def _start_server(application) -> None:
     global _server
     import uvicorn
@@ -107,7 +130,7 @@ def _tray_image():
         font = ImageFont.truetype("arial.ttf", 38)
     except Exception:
         font = ImageFont.load_default()
-    draw.text((17, 8), "I", fill=(255, 255, 255, 255), font=font)
+    draw.text((17, 8), "B", fill=(255, 255, 255, 255), font=font)
     return img
 
 
@@ -186,6 +209,9 @@ def _shutdown() -> None:
 
 
 def main() -> None:
+    global PORT
+    global BASE_URL
+
     _ensure_stdio()
     os.chdir(_app_dir())
     _ensure_data_dirs()
@@ -194,6 +220,9 @@ def main() -> None:
     # Импорт в главном потоке: pyrogram на этапе импорта вызывает
     # asyncio.get_event_loop(), что падает в фоновом потоке без event loop.
     from app.main import app as application
+
+    PORT = _pick_free_port()
+    BASE_URL = f"http://{HOST}:{PORT}"
 
     thread = threading.Thread(target=_start_server, args=(application,), daemon=True)
     thread.start()

@@ -146,6 +146,31 @@ class ContactService:
             assert contact is not None
         return await self._to_response(contact)
 
+    async def set_spam(self, contact_id: int, spam: bool) -> Optional[ContactResponse]:
+        contact = await self.contact_repo.get_by_id(contact_id)
+        if not contact:
+            return None
+        update_data: dict[str, object] = {}
+        if spam:
+            if contact.life_sphere != "spam":
+                update_data = {
+                    "life_sphere": "spam",
+                    "previous_life_sphere": contact.life_sphere,
+                    "folder_id": None,
+                }
+        else:
+            if contact.life_sphere == "spam":
+                update_data = {
+                    "life_sphere": contact.previous_life_sphere,
+                    "previous_life_sphere": None,
+                }
+        if update_data:
+            await self.contact_repo.update(contact_id, **update_data)
+        result = await self.contact_repo.get_by_id(contact_id)
+        if result is None:
+            return None
+        return await self._to_response(result)
+
     async def _get_contact_sphere(self, contact_id: int) -> Optional[str]:
         query = select(ContactModel.life_sphere).where(ContactModel.id == contact_id)
         if self.owner_id is not None:

@@ -265,6 +265,20 @@ async def restore_contact(
     return contact
 
 
+@router.post("/{contact_id}/set-spam", response_model=ContactResponse)
+async def set_spam_contact(
+    contact_id: int,
+    spam: bool = Query(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: UserModel = Depends(get_current_user),
+) -> ContactResponse:
+    service = ContactService(session, owner_id=int(current_user.id))
+    contact = await service.set_spam(contact_id, spam)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return contact
+
+
 @router.post("/{contact_id}/block", response_model=ContactResponse)
 async def block_contact(
     contact_id: int,

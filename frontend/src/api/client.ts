@@ -77,6 +77,7 @@ type RequestOptions = RequestInit & {
   _offlineEnqueue?: boolean
   _timeoutMs?: number
   _entityId?: number
+  _textResponse?: boolean
 }
 
 let enqueueOffline: ((method: string, path: string, body?: string, entityId?: number) => Promise<void>) | null = null
@@ -184,6 +185,7 @@ export async function request<T>(path: string, options?: RequestOptions): Promis
       )
     }
     if (response.status === 204) return undefined as T
+    if (options?._textResponse) return (await response.text()) as T
     return response.json()
   } catch (err) {
     if (!skipEnqueue && offlineEnqueue && isMutation && enqueueOffline && isOfflineError(err)) {

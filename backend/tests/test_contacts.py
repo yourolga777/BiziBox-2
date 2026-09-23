@@ -60,6 +60,39 @@ async def test_delete_contact():
 
 
 @pytest.mark.asyncio
+async def test_set_spam_restores_previous_sphere():
+    async with make_client() as client:
+        created = await client.post("/api/contacts/", json={
+            "name": "Spam Restore",
+            "life_sphere": "work",
+        })
+        cid = created.json()["id"]
+
+        marked = await client.post(f"/api/contacts/{cid}/set-spam?spam=true")
+        assert marked.status_code == 200
+        assert marked.json()["life_sphere"] == "spam"
+
+        restored = await client.post(f"/api/contacts/{cid}/set-spam?spam=false")
+        assert restored.status_code == 200
+        assert restored.json()["life_sphere"] == "work"
+
+
+@pytest.mark.asyncio
+async def test_set_spam_without_previous_sphere_returns_null():
+    async with make_client() as client:
+        created = await client.post("/api/contacts/", json={"name": "Spam Null"})
+        cid = created.json()["id"]
+
+        marked = await client.post(f"/api/contacts/{cid}/set-spam?spam=true")
+        assert marked.status_code == 200
+        assert marked.json()["life_sphere"] == "spam"
+
+        restored = await client.post(f"/api/contacts/{cid}/set-spam?spam=false")
+        assert restored.status_code == 200
+        assert restored.json()["life_sphere"] is None
+
+
+@pytest.mark.asyncio
 async def test_search_contacts():
     async with make_client() as client:
         await client.post("/api/contacts/", json={"name": "Сергей Иванов", "phone": "+79161112233"})

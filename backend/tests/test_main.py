@@ -18,6 +18,7 @@ async def test_health():
     data = response.json()
     assert data["status"] == "ok"
     assert data["version"] == VERSION
+    assert data["app"] == "BiziBox"
 
 
 @pytest.mark.asyncio

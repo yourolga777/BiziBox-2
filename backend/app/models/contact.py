@@ -52,6 +52,9 @@ class ContactModel(Base):
     life_sphere: Mapped[Optional[str]] = mapped_column(
         String(20), index=True, nullable=True
     )
+    previous_life_sphere: Mapped[Optional[str]] = mapped_column(
+        String(20), index=True, nullable=True
+    )
     birthday: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)

@@ -254,7 +254,7 @@ app.include_router(startup_router, prefix="/api/startup", tags=["startup"])
 @app.get("/api/health")
 @limiter.limit("60/minute")
 async def health(request: Request) -> dict[str, Any]:
-    return {"status": "ok", "version": VERSION}
+    return {"status": "ok", "version": VERSION, "app": "BiziBox"}
 
 
 def _resolve_frontend_dist() -> Path | None:
