@@ -87,7 +87,7 @@ export default function SpamFeedDialog({ open, onClose, type = 'spam' }: Props) 
 
   const handleUnspam = async (contactId: number) => {
     try {
-      await contactApi.update(contactId, { life_sphere: 'personal', folder_id: null })
+      await contactApi.setSpam(contactId, false)
       showToast('Контакт возвращён из спама', 'success')
       spamQuery.refetch()
     } catch {

@@ -321,10 +321,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
 
   const handleToggleSpam = () => {
     const isSpam = contact?.life_sphere === 'spam'
-    contactApi.update(
-      message.contact_id,
-      isSpam ? { life_sphere: 'personal', folder_id: null } : { life_sphere: 'spam', folder_id: null },
-    )
+    contactApi.setSpam(message.contact_id, !isSpam)
       .then(c => {
         setContact(c)
         queryClient.invalidateQueries({ queryKey: ['messages'] })

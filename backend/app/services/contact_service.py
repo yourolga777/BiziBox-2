@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import DEFAULT_OWNER_ID
 from ..models import (
+    ContactFolderModel,
     ContactModel,
     ContactNoteModel,
     ContactTypeTemplateModel,
@@ -423,16 +424,56 @@ class ContactService:
         result = await self.session.execute(query.order_by(ContactModel.name))
         contacts = result.scalars().all()
 
+        contact_ids = [c.id for c in contacts]
+
+        folder_rows = await self.session.execute(
+            select(ContactFolderModel.id, ContactFolderModel.name).where(
+                ContactFolderModel.id.in_(
+                    [c.folder_id for c in contacts if c.folder_id is not None]
+                )
+            )
+        ) if contact_ids else None
+        folder_names = {}
+        if folder_rows is not None:
+            folder_names = {fid: name for fid, name in folder_rows.all()}
+
+        type_rows = await self.session.execute(
+            select(
+                contact_contact_type_association.c.contact_id,
+                ContactTypeTemplateModel.name,
+            )
+            .join(
+                ContactTypeTemplateModel,
+                contact_contact_type_association.c.template_id
+                == ContactTypeTemplateModel.id,
+            )
+            .where(contact_contact_type_association.c.contact_id.in_(contact_ids))
+        )
+        type_names: dict[int, list[str]] = {}
+        for cid, tname in type_rows.all():
+            type_names.setdefault(cid, []).append(tname)
+        del(type_rows)
+
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow([
             "id", "name", "phone", "email", "telegram_username",
-            "is_known", "notes", "created_at",
+            "life_sphere", "folder_id", "folder_name", "contact_types",
+            "is_known", "is_favorite", "is_blocked", "birthday",
+            "notes", "created_at", "updated_at",
         ])
         for c in contacts:
+            channel_types = []
+            if c.telegram_id:
+                channel_types.append("telegram")
+            if c.email:
+                channel_types.append("email")
             writer.writerow([
                 c.id, c.name, c.phone, c.email, c.telegram_username,
-                int(c.is_known), c.notes, c.created_at,
+                c.life_sphere, c.folder_id, folder_names.get(c.folder_id, ""),
+                "; ".join(type_names.get(c.id, [])),
+                int(c.is_known), int(c.is_favorite), int(c.is_blocked),
+                str(c.birthday or ""), c.notes, c.created_at, c.updated_at,
             ])
         return output.getvalue()
 

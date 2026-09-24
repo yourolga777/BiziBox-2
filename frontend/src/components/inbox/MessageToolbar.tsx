@@ -20,7 +20,7 @@ export default function MessageToolbar({ message, contact, onContactUpdate }: Me
           type="button"
           onClick={() => {
             const next = !isSpam
-            contactApi.update(message.contact_id, next ? { life_sphere: 'spam', folder_id: null } : { life_sphere: 'personal', folder_id: null })
+            contactApi.setSpam(message.contact_id, next)
               .then(c => {
                 if (onContactUpdate) onContactUpdate(c)
                 queryClient.invalidateQueries({ queryKey: ['messages'] })

@@ -152,6 +152,19 @@ describe('MessageDetail — кнопка спам', () => {
 
   it('отправляет life_sphere: spam при клике на кнопку Спам', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let spamParam: string | null = null;
+    server.use(
+      http.get('/api/folders', () => HttpResponse.json([])),
+      http.get('/api/templates', () => HttpResponse.json([])),
+      http.get('/api/messages/dialog/1', () => HttpResponse.json([])),
+      http.get('/api/contacts/1', () => HttpResponse.json(makeContact('Контакт Спам'))),
+      http.post('/api/contacts/1/set-spam', async ({ request }) => {
+        spamParam = new URL(request.url).searchParams.get('spam');
+        const updated = makeContact('Контакт Спам');
+        updated.life_sphere = spamParam === 'true' ? 'spam' : 'personal';
+        return HttpResponse.json(updated);
+      }),
+    );
     render(
       <MessageDetail message={makeMessage()} contactName="Контакт Спам" onClose={vi.fn()} onReplied={vi.fn()} />,
       { wrapper: createWrapper(qc) },
@@ -160,8 +173,7 @@ describe('MessageDetail — кнопка спам', () => {
     await waitFor(() => expect(screen.getByTitle('Пометить как спам')).toBeTruthy());
     await userEvent.click(screen.getByTitle('Пометить как спам'));
 
-    await waitFor(() => expect(patchBody).not.toBeNull());
-    expect(patchBody).toEqual({ life_sphere: 'spam', folder_id: null });
+    await waitFor(() => expect(spamParam).toBe('true'));
   });
 });
 

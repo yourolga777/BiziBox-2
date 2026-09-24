@@ -130,12 +130,8 @@ export default function ContactDetailPanel({
   }
 
   const handleToggleSpam = async () => {
-    await updateContact.mutateAsync({
-      id: contact.id,
-      data: isSpam
-        ? { life_sphere: 'personal', folder_id: null }
-        : { life_sphere: 'spam', folder_id: null },
-    })
+    const next = contact.life_sphere !== 'spam'
+    await contactApi.setSpam(contact.id, next)
     queryClient.invalidateQueries({ queryKey: ['messages'] })
     queryClient.invalidateQueries({ queryKey: ['inbox'] })
     queryClient.invalidateQueries({ queryKey: ['feed'] })
