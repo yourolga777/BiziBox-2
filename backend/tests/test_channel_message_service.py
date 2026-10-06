@@ -290,6 +290,105 @@ async def test_send_reply_no_channel_id_raises_400(service):
 
 
 @pytest.mark.asyncio
+async def test_send_message_with_recipient_uses_it(service, monkeypatch):
+    from app.services import channel_message_service as cms_mod
+
+    service.contact_repo.get_by_id = AsyncMock(
+        return_value=MagicMock(id=10, telegram_id="12345", email=None)
+    )
+    adapter = AsyncMock()
+    adapter.send_message.return_value = {"message_id": "sent_1"}
+    service.register_channel("telegram", adapter)
+    service.message_service.create = AsyncMock(return_value=MagicMock(id=300))
+    service.message_repo.get_by_id = AsyncMock(return_value=None)
+    service.contact_repo.update = AsyncMock()
+
+    fake_outbox = MagicMock()
+    fake_outbox.enqueue = AsyncMock(return_value=MagicMock(id=1000))
+    fake_outbox.attempt_delivery = AsyncMock(return_value=None)
+    monkeypatch.setattr(cms_mod, "OutboxService", lambda *a, **k: fake_outbox)
+
+    result = await service.send_message(
+        contact_id=10, channel="telegram", content="Hi", recipient="999888777"
+    )
+
+    assert result.id == 300
+    assert fake_outbox.enqueue.call_args.kwargs["channel_id"] == "999888777"
+
+
+@pytest.mark.asyncio
+async def test_send_message_with_username_recipient_resolves(service, monkeypatch):
+    from app.services import channel_message_service as cms_mod
+
+    service.contact_repo.get_by_id = AsyncMock(
+        return_value=MagicMock(id=10, telegram_id="12345", email=None)
+    )
+    adapter = AsyncMock()
+    adapter.resolve_channel_id = AsyncMock(return_value="555666")
+    adapter.send_message.return_value = {"message_id": "sent_2"}
+    service.register_channel("telegram", adapter)
+    service.message_service.create = AsyncMock(return_value=MagicMock(id=301))
+    service.message_repo.get_by_id = AsyncMock(return_value=None)
+    service.contact_repo.update = AsyncMock()
+
+    fake_outbox = MagicMock()
+    fake_outbox.enqueue = AsyncMock(return_value=MagicMock(id=1001))
+    fake_outbox.attempt_delivery = AsyncMock(return_value=None)
+    monkeypatch.setattr(cms_mod, "OutboxService", lambda *a, **k: fake_outbox)
+
+    result = await service.send_message(
+        contact_id=10, channel="telegram", content="Hi", recipient="@alice"
+    )
+
+    assert result.id == 301
+    adapter.resolve_channel_id.assert_awaited_once_with("@alice")
+    assert fake_outbox.enqueue.call_args.kwargs["channel_id"] == "555666"
+
+
+@pytest.mark.asyncio
+async def test_send_message_unresolvable_recipient_raises_400(service):
+    service.contact_repo.get_by_id = AsyncMock(
+        return_value=MagicMock(id=10, telegram_id="12345", email=None)
+    )
+    adapter = AsyncMock()
+    adapter.resolve_channel_id = AsyncMock(side_effect=Exception("no such user"))
+    service.register_channel("telegram", adapter)
+
+    with pytest.raises(HTTPException) as exc:
+        await service.send_message(
+            contact_id=10, channel="telegram", content="Hi", recipient="@ghost"
+        )
+
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_send_reply_with_recipient_overrides_contact_address(service, monkeypatch):
+    from app.services import channel_message_service as cms_mod
+
+    original = MagicMock(id=1, channel="telegram", contact_id=10, channel_message_id=None)
+    service.message_repo.get_by_id = AsyncMock(return_value=original)
+    service.contact_repo.get_by_id = AsyncMock(
+        return_value=MagicMock(id=10, telegram_id="12345", email=None)
+    )
+    adapter = AsyncMock()
+    adapter.send_message.return_value = {"message_id": "sent_1"}
+    service.register_channel("telegram", adapter)
+    service.message_service.create = AsyncMock(return_value=MagicMock(id=201))
+    service.contact_repo.update = AsyncMock()
+
+    fake_outbox = MagicMock()
+    fake_outbox.enqueue = AsyncMock(return_value=MagicMock(id=998))
+    fake_outbox.attempt_delivery = AsyncMock(return_value={"message_id": "sent_1"})
+    monkeypatch.setattr(cms_mod, "OutboxService", lambda *a, **k: fake_outbox)
+
+    result = await service.send_reply(1, "Hello back", recipient="777000")
+
+    assert result.id == 201
+    assert fake_outbox.enqueue.call_args.kwargs["channel_id"] == "777000"
+
+
+@pytest.mark.asyncio
 async def test_process_incoming_updates_telegram_id(service):
     contact = MagicMock(id=10, telegram_id=None, email=None, folder_id=None, is_spam=False, life_sphere="personal")
     service.contact_repo.get_or_create = AsyncMock(return_value=contact)
@@ -421,18 +520,12 @@ async def test_process_incoming_skips_channel_contact_integration():
 
     from app.database import AsyncSessionLocal
     from app.models import MessageModel
-    from app.repositories.contact_folder import ContactFolderRepository
 
     async with AsyncSessionLocal() as session:
         service = ChannelMessageService(session)
-        folder_repo = ContactFolderRepository(session)
-        channel_folders = await folder_repo.get_all_by_category_key("channels")
-        assert channel_folders
-        channel_folder = channel_folders[0]
 
         await service.contact_repo.create(
-            name="Channel", life_sphere="work", telegram_id="12345",
-            folder_id=channel_folder.id,
+            name="Channel", life_sphere="channels", telegram_id="12345",
         )
         result = await service.process_incoming({
             "channel": "telegram",
@@ -455,17 +548,12 @@ async def test_process_incoming_allows_channel_when_forced_integration():
 
     from app.database import AsyncSessionLocal
     from app.models import MessageModel
-    from app.repositories.contact_folder import ContactFolderRepository
 
     async with AsyncSessionLocal() as session:
         service = ChannelMessageService(session)
-        folder_repo = ContactFolderRepository(session)
-        channel_folders = await folder_repo.get_all_by_category_key("channels")
-        channel_folder = channel_folders[0]
 
         await service.contact_repo.create(
-            name="Channel", life_sphere="work", telegram_id="12345",
-            folder_id=channel_folder.id,
+            name="Channel", life_sphere="channels", telegram_id="12345",
         )
         result = await service.process_incoming(
             {

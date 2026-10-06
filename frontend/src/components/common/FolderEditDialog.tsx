@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Trash2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { contactApi } from '../../api/client'
 import { useToast } from '../../components/common/Toast'
 import { useFoldersQuery } from '../../hooks/queries'
 import { useQueryClient } from '@tanstack/react-query'
 import { CONTACT_SPHERE_META } from '../../types/contactType'
+import FolderTree from '../../components/common/FolderTree'
+import FolderEditModal from './FolderEditModal'
 import type { ContactFolder, ContactSphere } from '../../types/contact'
 
 const PRESET_COLORS = [
@@ -23,22 +25,26 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
   const { showToast } = useToast()
   const queryClient = useQueryClient()
   const { data: allFolders = [] } = useFoldersQuery()
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editColor, setEditColor] = useState('')
+  const [editingFolder, setEditingFolder] = useState<ContactFolder | null>(null)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState('#3b82f6')
   const [newType, setNewType] = useState<ContactSphere>('personal')
+  const [newParent, setNewParent] = useState<number | null>(null)
   const [nameError, setNameError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<ContactFolder | null>(null)
   const newNameRef = useRef<HTMLInputElement>(null)
 
   const mode = initialMode === 'create' ? 'create' : 'manage'
 
+  const parentCandidates = allFolders.filter(
+    f => (f.sphere || 'personal') === newType && !f.parent_id,
+  )
+
   useEffect(() => {
     setNameError('')
     setNewName('')
-    setEditingId(null)
+    setNewParent(null)
+    setEditingFolder(null)
     setPendingDelete(null)
   }, [open])
 
@@ -47,29 +53,6 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
       newNameRef.current?.focus()
     }
   }, [open, mode])
-
-  const handleEdit = (folder: ContactFolder) => {
-    setEditingId(folder.id)
-    setEditName(folder.name)
-    setEditColor(folder.color || '#6b7280')
-    setNameError('')
-  }
-
-  const handleSaveEdit = async (id: number) => {
-    const trimmed = editName.trim()
-    if (!trimmed) {
-      setNameError('Название не может быть пустым')
-      return
-    }
-    try {
-      await contactApi.updateFolder(id, { name: trimmed, color: editColor || null })
-      queryClient.invalidateQueries({ queryKey: ['folders'] })
-      showToast('Папка обновлена', 'success')
-      setEditingId(null)
-    } catch {
-      showToast('Ошибка при обновлении', 'error')
-    }
-  }
 
   const handleDelete = async (folder: ContactFolder) => {
     if (folder.is_default) return
@@ -101,12 +84,22 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
         name: trimmed,
         color: newColor,
         sphere: newType,
+        parent_id: newParent,
       })
       queryClient.invalidateQueries({ queryKey: ['folders'] })
       showToast('Папка создана', 'success')
       onClose()
     } catch {
       showToast('Ошибка при создании', 'error')
+    }
+  }
+
+  const handleReorder = async (ids: number[]) => {
+    try {
+      await contactApi.reorderFolders(ids)
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+    } catch {
+      showToast('Не удалось изменить порядок', 'error')
     }
   }
 
@@ -152,13 +145,30 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
               <select
                 id="folder-create-type"
                 value={newType}
-                onChange={e => setNewType(e.target.value as ContactSphere)}
+                onChange={e => { setNewType(e.target.value as ContactSphere); setNewParent(null) }}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
               >
                 <option value="personal">{CONTACT_SPHERE_META.personal.label}</option>
                 <option value="work">{CONTACT_SPHERE_META.work.label}</option>
+                <option value="channels">{CONTACT_SPHERE_META.channels.label}</option>
               </select>
             </div>
+            {parentCandidates.length > 0 && (
+              <div>
+                <label htmlFor="folder-create-parent" className="block text-xs font-medium text-gray-500 mb-1">Внутри папки</label>
+                <select
+                  id="folder-create-parent"
+                  value={newParent === null ? '' : String(newParent)}
+                  onChange={e => setNewParent(e.target.value === '' ? null : Number(e.target.value))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                >
+                  <option value="">Без родительской папки</option>
+                  {parentCandidates.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {nameError && <p className="text-xs text-red-500">{nameError}</p>}
             <div className="flex justify-end gap-2 pt-1">
               <button
@@ -179,72 +189,13 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
         ) : (
         <>
         <div className="px-5 py-3 space-y-2 max-h-[50vh] overflow-y-auto">
-          {allFolders.map((folder: ContactFolder) => {
-            const isEditing = editingId === folder.id
-            return (
-              <div
-                key={folder.id}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg border border-gray-100 bg-white"
-              >
-                {isEditing ? (
-                  <>
-                    <input
-                      type="color"
-                      value={editColor}
-                      onChange={(e) => setEditColor(e.target.value)}
-                      className="w-4 h-4 rounded border-0 p-0 cursor-pointer shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => { setEditName(e.target.value); setNameError('') }}
-                      className="flex-1 px-2 py-1 text-sm border border-gray-200 rounded focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-                    />
-                    {nameError && <span className="text-xs text-red-500">{nameError}</span>}
-                    <button
-                      onClick={() => handleSaveEdit(folder.id)}
-                      className="shrink-0 px-3 py-1 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700"
-                    >
-                      Сохранить
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      className="p-1.5 rounded text-gray-400 hover:bg-gray-100"
-                      title="Отмена"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: folder.color || '#6b7280' }}
-                    />
-                    <span className="text-sm text-gray-700 flex-1">{folder.name}</span>
-                    {folder.is_default && (
-                      <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">системная</span>
-                    )}
-                    <button
-                      onClick={() => handleEdit(folder)}
-                      className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                      title="Переименовать"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(folder)}
-                      disabled={folder.is_default}
-                      className={`p-1 rounded ${folder.is_default ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
-                      title={folder.is_default ? 'Системные папки нельзя удалить' : 'Удалить'}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            )
-          })}
+          <FolderTree
+            folders={allFolders}
+            groupBySphere
+            onEdit={setEditingFolder}
+            onDelete={handleDelete}
+            onReorder={handleReorder}
+          />
         </div>
 
         <div className="px-5 py-3 border-t border-gray-200 space-y-2">
@@ -289,17 +240,38 @@ export default function FolderEditDialog({ open, onClose, initialMode = 'manage'
             <select
               id="folder-manage-type"
               value={newType}
-              onChange={e => setNewType(e.target.value as ContactSphere)}
+              onChange={e => { setNewType(e.target.value as ContactSphere); setNewParent(null) }}
               className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
             >
               <option value="personal">{CONTACT_SPHERE_META.personal.label}</option>
               <option value="work">{CONTACT_SPHERE_META.work.label}</option>
+              <option value="channels">{CONTACT_SPHERE_META.channels.label}</option>
             </select>
           </div>
+          {parentCandidates.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="folder-manage-parent" className="text-xs font-medium text-gray-500 shrink-0">Внутри</label>
+              <select
+                id="folder-manage-parent"
+                value={newParent === null ? '' : String(newParent)}
+                onChange={e => setNewParent(e.target.value === '' ? null : Number(e.target.value))}
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              >
+                <option value="">Без родительской папки</option>
+                {parentCandidates.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         </>
         )}
       </div>
+
+      {editingFolder && (
+        <FolderEditModal folder={editingFolder} onClose={() => setEditingFolder(null)} />
+      )}
 
       {pendingDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">

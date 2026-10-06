@@ -1,4 +1,19 @@
-export type ContactSphere = 'personal' | 'work' | 'spam'
+export type ContactSphere = 'personal' | 'work' | 'channels' | 'spam'
+
+export type ContactIdentifierChannel = 'phone' | 'email' | 'telegram_id' | 'telegram_username'
+
+export interface ContactIdentifier {
+  channel: ContactIdentifierChannel
+  value: string
+}
+
+export interface ContactFolderRef {
+  id: number
+  name: string
+  color?: string | null
+  sphere?: ContactSphere | null
+  parent_id?: number | null
+}
 
 export interface Contact {
   id: number
@@ -23,6 +38,9 @@ export interface Contact {
   updated_at: string | null
   message_count?: number
   task_count?: number
+  identifiers?: ContactIdentifier[]
+  spheres?: string[]
+  folders?: ContactFolderRef[]
 }
 
 export type ContactSortBy = 'name' | 'created_at' | 'message_count' | 'last_activity' | 'first_message' | 'has_tasks'
@@ -36,6 +54,7 @@ export interface ContactsQueryParams {
   contact_type_ids?: number[]
   folder_id?: number
   is_favorite?: boolean
+  unclassified?: boolean
   sort_by?: ContactSortBy
   sort_order?: 'asc' | 'desc'
   skip?: number
@@ -55,6 +74,7 @@ export interface ContactCreate {
   is_known?: boolean | null
   is_favorite?: boolean | null
   folder_id?: number | null
+  folder_ids?: number[] | null
 }
 
 export interface ContactUpdate {
@@ -69,6 +89,7 @@ export interface ContactUpdate {
   contact_type_ids?: number[] | null
   birthday?: string | null
   folder_id?: number | null
+  folder_ids?: number[] | null
   notes?: string | null
 }
 

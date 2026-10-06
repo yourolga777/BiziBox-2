@@ -1,5 +1,6 @@
 import { useDroppable, useDraggable } from '@dnd-kit/core'
 import { CalendarIcon, GripVertical, Bell } from 'lucide-react'
+import MessagePreview from '../common/MessagePreview'
 import type { TaskStatus } from '../../types/task'
 import type { Task } from '../../types/task'
 
@@ -132,6 +133,9 @@ export function DraggableTaskCard({ task, onClick, getContactName }: DraggableTa
               </span>
             ) : null}
           </div>
+          {task.message_id != null && (
+            <MessagePreview messageId={task.message_id} className="text-[10px] text-gray-400 mt-1 line-clamp-2 italic" />
+          )}
           <div className="flex items-center gap-1.5 mt-2">
             {task.reminder_minutes != null && (
               <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600" title="Напоминание">

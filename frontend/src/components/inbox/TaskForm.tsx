@@ -10,9 +10,10 @@ interface TaskFormProps {
   onClose: () => void
   initialTitle?: string
   initialDescription?: string
+  messageId?: number | null
 }
 
-function TaskForm({ contactId, contactName, onTaskCreated, onClose, initialTitle, initialDescription }: TaskFormProps) {
+function TaskForm({ contactId, contactName, onTaskCreated, onClose, initialTitle, initialDescription, messageId }: TaskFormProps) {
   const [title, setTitle] = useState(initialTitle ?? '')
   const [description, setDescription] = useState(initialDescription ?? '')
   const [dueDate, setDueDate] = useState('')
@@ -32,6 +33,7 @@ function TaskForm({ contactId, contactName, onTaskCreated, onClose, initialTitle
         reminder_minutes: reminder === '' ? undefined : reminder,
         recurrence: recurrence || undefined,
         contact_id: contactId,
+        message_id: messageId ?? undefined,
       })
       setCreated(true)
       onTaskCreated()

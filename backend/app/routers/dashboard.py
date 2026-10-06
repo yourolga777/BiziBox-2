@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import ContactFolderModel, ContactModel, MessageModel, TaskModel, UserModel
+from ..models import ContactModel, MessageModel, TaskModel, UserModel
 from ..schemas.dashboard import (
     ChannelDistribution,
     MetricsResponse,
@@ -79,29 +79,14 @@ async def get_metrics(
     )
     completed_tasks = await c(TaskModel, TaskModel.status == "completed")
 
-    # Контакты-«каналы»: папки с category_key == 'channels' и их подпапки.
-    channel_folder_ids: set[int] = set()
-    folder_rows = await session.execute(
-        select(ContactFolderModel.id).where(
-            ContactFolderModel.category_key == "channels"
+    # Контакты-«каналы»: сфера life_sphere == 'channels'.
+    channel_contact_ids: set[int] = set()
+    cc_rows = await session.execute(
+        select(ContactModel.id).where(
+            ContactModel.life_sphere == "channels"
         )
     )
-    channel_folder_ids = {r[0] for r in folder_rows.all()}
-    if channel_folder_ids:
-        child_rows = await session.execute(
-            select(ContactFolderModel.id).where(
-                ContactFolderModel.parent_id.in_(channel_folder_ids)
-            )
-        )
-        channel_folder_ids |= {r[0] for r in child_rows.all()}
-    channel_contact_ids: set[int] = set()
-    if channel_folder_ids:
-        cc_rows = await session.execute(
-            select(ContactModel.id).where(
-                ContactModel.folder_id.in_(channel_folder_ids)
-            )
-        )
-        channel_contact_ids = {r[0] for r in cc_rows.all()}
+    channel_contact_ids = {r[0] for r in cc_rows.all()}
 
     new_messages_query = (
         select(func.count(MessageModel.id))

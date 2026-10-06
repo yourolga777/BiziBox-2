@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { MessageSquare, Globe, Shield, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import { MessageSquare, Globe, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { EMAIL_PROVIDERS } from '../utils/emailProviders'
+import NetworkModeSelector from '../components/common/NetworkModeSelector'
+import type { NetworkMode } from '../types/settings'
 
 export type StepData = {
   login: string
   telegram: { api_id: string; api_hash: string; phone: string; password_2fa: string; useCustomApi: boolean }
   email: { email: string; password: string; imap_host: string; smtp_host: string; imap_port: number; smtp_port: number }
-  proxy: { type: string; host: string; port: string; username: string; password: string; secret: string; useCustomProxy: boolean }
+  proxy: { mode: NetworkMode; type: string; host: string; port: string; username: string; password: string; secret: string }
 }
 
 export type UpdateData = (section: keyof StepData, field: string, value: string | number | boolean) => void
@@ -16,7 +18,6 @@ interface StepProps {
   updateData: UpdateData
   expanded: boolean
   setExpanded: (value: boolean) => void
-  serverProxy?: string
 }
 
 export function isValidLogin(value: string): boolean {
@@ -254,139 +255,13 @@ export function EmailStep({ data, updateData }: { data: StepData; updateData: Up
   )
 }
 
-export function ProxyStep({ data, updateData, expanded, setExpanded, serverProxy }: StepProps) {
+export function ProxyStep({ data, updateData }: { data: StepData; updateData: UpdateData }) {
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 bg-purple-100 rounded-lg">
-          <Shield className="w-6 h-6 text-purple-600" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold">Прокси / VPN</h2>
-          <p className="text-sm text-gray-500">Опционально. Если VPN работает на уровне системы — просто пропустите.</p>
-        </div>
-      </div>
-      {serverProxy && (
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-          Серверный прокси по умолчанию: <span className="font-mono">{serverProxy}</span>
-        </p>
-      )}
-      <div className="border-t border-gray-100 pt-3">
-        <button
-          type="button"
-          onClick={() => {
-            setExpanded(!expanded)
-            updateData('proxy', 'useCustomProxy', !expanded)
-          }}
-          className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          Подключаться через свой прокси / VPN
-        </button>
-        {expanded && (
-          <div className="mt-3 space-y-3">
-            <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-              Прокси нужен только для <b>Telegram</b>: он поддерживает SOCKS5, HTTP и
-              MTProto. Если у вас VPN-приложение (v2rayN/Xray/Clash/Happ), укажите его{' '}
-              <b>локальный</b> адрес — обычно <span className="font-mono">127.0.0.1:10808</span>,
-              а не IP сервера. <b>Email и остальные каналы работают без прокси</b> — для них
-              ничего менять не нужно. Настоящий системный VPN (WireGuard/OpenVPN) прокси не
-              требует — оставьте этот блок выключенным.
-            </p>
-            <div>
-              <label htmlFor="proxy-type" className="block text-sm font-medium text-gray-700 mb-1">Тип</label>
-              <select
-                id="proxy-type"
-                value={data.proxy.type}
-                onChange={e => updateData('proxy', 'type', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="socks5">SOCKS5</option>
-                <option value="mtproto">MTProto</option>
-                <option value="http">HTTP</option>
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="proxy-host" className="block text-sm font-medium text-gray-700 mb-1">Хост</label>
-                <input
-                  id="proxy-host"
-                  type="text" value={data.proxy.host}
-                  onChange={e => updateData('proxy', 'host', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="127.0.0.1"
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label htmlFor="proxy-port" className="block text-sm font-medium text-gray-700 mb-1">Порт</label>
-                <input
-                  id="proxy-port"
-                  type="number" value={data.proxy.port}
-                  onChange={e => updateData('proxy', 'port', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="10808"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            {data.proxy.type === 'mtproto' ? (
-              <div>
-                <label htmlFor="proxy-secret" className="block text-sm font-medium text-gray-700 mb-1">Secret</label>
-                <input
-                  id="proxy-secret"
-                  type="text"
-                  value={data.proxy.secret}
-                  onChange={e => updateData('proxy', 'secret', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  placeholder="Секретный ключ MTProto-прокси"
-                  autoComplete="off"
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="proxy-user" className="block text-sm font-medium text-gray-700 mb-1">Логин</label>
-                  <input
-                    id="proxy-user"
-                    type="text" value={data.proxy.username}
-                    onChange={e => updateData('proxy', 'username', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="(опционально)"
-                    autoComplete="off"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="proxy-pass" className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
-                  <input
-                    id="proxy-pass"
-                    type="password" value={data.proxy.password}
-                    onChange={e => updateData('proxy', 'password', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder="(опционально)"
-                    autoComplete="new-password"
-                  />
-                </div>
-              </div>
-            )}
-            {(data.proxy.host || data.proxy.username || data.proxy.password || data.proxy.secret) && (
-              <button
-                type="button"
-                onClick={() => {
-                  updateData('proxy', 'host', '')
-                  updateData('proxy', 'port', '')
-                  updateData('proxy', 'username', '')
-                  updateData('proxy', 'password', '')
-                  updateData('proxy', 'secret', '')
-                }}
-                className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
-              >
-                Очистить поля
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+    <NetworkModeSelector
+      mode={data.proxy.mode}
+      fields={data.proxy}
+      onModeChange={(mode) => updateData('proxy', 'mode', mode)}
+      onFieldsChange={(field, value) => updateData('proxy', field, value)}
+    />
   )
 }

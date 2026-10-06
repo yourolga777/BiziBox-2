@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { AlertCircle, CalendarIcon, CheckCircle2, Circle, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Card from '../common/Card'
+import MessagePreview from '../common/MessagePreview'
 import { useTasksQuery, useUpdateTaskMutation } from '../../hooks/queries'
 import { TASK_STATUS_LABELS, type TaskStatus } from '../../types/task'
 import type { Task } from '../../types/task'
@@ -24,6 +25,7 @@ const DASHBOARD_STATUSES = [
   { status: 'new' as const, label: TASK_STATUS_LABELS.new, color: 'text-blue-600', dot: 'bg-blue-500' },
   { status: 'in_progress' as const, label: TASK_STATUS_LABELS.in_progress, color: 'text-amber-600', dot: 'bg-amber-500' },
   { status: 'completed' as const, label: TASK_STATUS_LABELS.completed, color: 'text-green-600', dot: 'bg-green-500' },
+  { status: 'cancelled' as const, label: TASK_STATUS_LABELS.cancelled, color: 'text-red-600', dot: 'bg-red-500' },
 ]
 
 const MAX_CARDS = 4
@@ -62,6 +64,9 @@ function TaskCard({ task }: { task: Task }) {
             </span>
           ) : null}
         </div>
+        {task.message_id != null && (
+          <MessagePreview messageId={task.message_id} className="text-[10px] text-gray-400 mt-1 line-clamp-2 italic" />
+        )}
       </Link>
     </div>
   )
@@ -122,11 +127,7 @@ function TasksBoard() {
     for (const task of all) {
       if (map[task.status]) map[task.status].push(task)
     }
-    return {
-      new: map.new,
-      in_progress: map.in_progress,
-      completed: map.completed,
-    }
+    return map
   }, [tasks])
 
   if (isError) {

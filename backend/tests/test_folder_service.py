@@ -42,6 +42,50 @@ async def test_delete_default_folder_returns_400():
 
 
 @pytest.mark.asyncio
+async def test_folder_reorder_updates_whole_row():
+    async with make_client() as client:
+        a = await client.post("/api/folders/", json={"name": "Aaa"})
+        b = await client.post("/api/folders/", json={"name": "Bbb"})
+        aid, bid = a.json()["id"], b.json()["id"]
+
+        resp = await client.post("/api/folders/reorder", json={"ids": [bid, aid]})
+        assert resp.status_code == 200
+        listed = resp.json()
+        orders = {f["id"]: f["sort_order"] for f in listed}
+        assert orders[bid] == 0
+        assert orders[aid] == 1
+        # sort_order уникален по всей строке
+        assert len({f["sort_order"] for f in listed}) == len(listed)
+        # порядок соответствует переданному списку
+        assert [f["id"] for f in listed if f["id"] in (aid, bid)] == [bid, aid]
+
+
+@pytest.mark.asyncio
+async def test_delete_folder_moves_children_and_clears_contacts():
+    async with make_client() as client:
+        parent = await client.post("/api/folders/", json={"name": "Parent"})
+        pid = parent.json()["id"]
+        child = await client.post(
+            "/api/folders/", json={"name": "Child", "parent_id": pid}
+        )
+        cid = child.json()["id"]
+        contact = await client.post(
+            "/api/contacts/", json={"name": "In Parent", "folder_id": pid}
+        )
+        contact_id = contact.json()["id"]
+
+        deleted = await client.delete(f"/api/folders/{pid}")
+        assert deleted.status_code == 204
+
+        folders = {f["id"]: f for f in (await client.get("/api/folders/")).json()}
+        assert pid not in folders
+        assert folders[cid]["parent_id"] is None
+
+        got = (await client.get(f"/api/contacts/{contact_id}")).json()
+        assert got["folder_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_assign_folder_to_contact():
     async with make_client() as client:
         folder = await client.post("/api/folders/", json={"name": "VIP"})

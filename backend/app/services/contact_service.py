@@ -9,17 +9,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import DEFAULT_OWNER_ID
 from ..models import (
     ContactFolderModel,
+    ContactIdentifierModel,
     ContactModel,
     ContactNoteModel,
+    ContactSphereModel,
     ContactTypeTemplateModel,
     MessageModel,
+    SupplierModel,
     TaskModel,
     contact_contact_type_association,
+    contact_folder_association,
 )
 from ..repositories.contact import ContactRepository
 from ..repositories.contact_folder import ContactFolderRepository
 from ..schemas.contact import (
     ContactCreate,
+    ContactFolderRef,
+    ContactIdentifierResponse,
     ContactResponse,
     ContactTypeTemplateCreate,
     ContactTypeTemplateResponse,
@@ -31,6 +37,16 @@ from ..schemas.contact import (
 )
 
 _SLUG_OVERRIDES = {"ё": "e", "й": "i", "ь": "", "ъ": ""}
+
+# Автосвязь папка ↔ метка: category_key системной папки → slug типа контакта.
+CATEGORY_TO_TYPE_SLUG = {
+    "family": "family",
+    "friends": "friends",
+    "study": "study",
+    "customers": "client",
+    "suppliers": "supplier",
+    "employees": "employee",
+}
 
 
 def _slugify(value: str) -> str:
@@ -60,6 +76,7 @@ class ContactService:
         contact_type_ids: Optional[List[int]] = None,
         folder_id: Optional[int] = None,
         is_favorite: Optional[bool] = None,
+        unclassified: bool = False,
         sort_by: str = "name",
         sort_order: str = "asc",
         skip: int = 0,
@@ -71,14 +88,43 @@ class ContactService:
             subsection=subsection,
             life_sphere=life_sphere,
             contact_type_ids=contact_type_ids,
-            folder_id=folder_id,
+            folder_ids=await self._folder_with_descendants(folder_id),
             is_favorite=is_favorite,
+            unclassified=unclassified,
             sort_by=sort_by,
             sort_order=sort_order,
             skip=skip,
             limit=limit,
         )
         return await self._enrich_contacts(contacts)
+
+    async def _folder_with_descendants(
+        self, folder_id: Optional[int]
+    ) -> Optional[List[int]]:
+        """Возвращает id папки и всех её подпапок (рекурсивно) для фильтра.
+
+        None означает «без фильтра по папке» (папка не выбрана).
+        """
+        if folder_id is None:
+            return None
+        query = select(ContactFolderModel.id, ContactFolderModel.parent_id)
+        if self.owner_id is not None:
+            query = query.where(ContactFolderModel.owner_id == self.owner_id)
+        rows = (await self.session.execute(query)).all()
+
+        children: dict[Optional[int], list[int]] = {}
+        for fid, pid in rows:
+            children.setdefault(pid, []).append(int(fid))
+
+        result: list[int] = []
+        stack: list[int] = [folder_id]
+        while stack:
+            cur = stack.pop()
+            if cur in result:
+                continue
+            result.append(cur)
+            stack.extend(children.get(cur, []))
+        return result
 
     async def get_deleted(
         self, skip: int = 0, limit: int = 100
@@ -111,6 +157,7 @@ class ContactService:
     async def create(self, data: ContactCreate) -> ContactResponse:
         create_dict = data.model_dump(exclude_unset=True)
         contact_type_ids = create_dict.pop("contact_type_ids", None)
+        folder_ids = create_dict.pop("folder_ids", None)
         await self._validate_folder(
             create_dict.get("folder_id"),
             create_dict.get("life_sphere"),
@@ -120,17 +167,19 @@ class ContactService:
             await self.contact_repo.set_contact_types(
                 int(contact.id), contact_type_ids
             )
-            refreshed = await self.contact_repo.get_by_id(int(contact.id))
-            if refreshed is None:
-                raise ValueError("Contact not found after creating type associations")
-            contact = refreshed
-        return await self._to_response(contact)
+        if folder_ids is not None:
+            await self._sync_folders_and_types(int(contact.id), folder_ids)
+        refreshed = await self.contact_repo.get_by_id(int(contact.id))
+        if refreshed is None:
+            raise ValueError("Contact not found after creating")
+        return await self._to_response(refreshed)
 
     async def update(
         self, contact_id: int, data: ContactUpdate
     ) -> Optional[ContactResponse]:
         update_dict = data.model_dump(exclude_unset=True)
         contact_type_ids = update_dict.pop("contact_type_ids", None)
+        folder_ids = update_dict.pop("folder_ids", None)
         final_sphere = update_dict.get("life_sphere")
         if final_sphere is None:
             final_sphere = await self._get_contact_sphere(contact_id)
@@ -143,9 +192,70 @@ class ContactService:
             return None
         if contact_type_ids is not None:
             await self.contact_repo.set_contact_types(contact_id, contact_type_ids)
-            contact = await self.contact_repo.get_by_id(contact_id)
-            assert contact is not None
-        return await self._to_response(contact)
+        if folder_ids is not None:
+            await self._sync_folders_and_types(contact_id, folder_ids)
+        refreshed = await self.contact_repo.get_by_id(contact_id)
+        assert refreshed is not None
+        return await self._to_response(refreshed)
+
+    async def _sync_folders_and_types(
+        self, contact_id: int, folder_ids: list[int]
+    ) -> None:
+        """Заменяет набор папок контакта (M2M) и авто-применяет метки."""
+        owner_id = self.owner_id or DEFAULT_OWNER_ID
+        await self.session.execute(
+            contact_folder_association.delete().where(
+                contact_folder_association.c.contact_id == contact_id
+            )
+        )
+        if folder_ids:
+            for fid in folder_ids:
+                await self.session.execute(
+                    contact_folder_association.insert().values(
+                        owner_id=owner_id, contact_id=contact_id, folder_id=fid
+                    )
+                )
+            folder_rows = await self.session.execute(
+                select(ContactFolderModel.category_key).where(
+                    ContactFolderModel.id.in_(folder_ids)
+                )
+            )
+            category_keys = [ck for (ck,) in folder_rows.all()]
+
+            # Авто-поставщик: папка «Поставщики» (category_key=suppliers) →
+            # создаём supplier-запись, чтобы контакт появился в Каталоге.
+            if "suppliers" in category_keys:
+                existing_supplier = await self.session.execute(
+                    select(SupplierModel.id).where(
+                        SupplierModel.contact_id == contact_id
+                    )
+                )
+                if existing_supplier.scalar_one_or_none() is None:
+                    self.session.add(
+                        SupplierModel(owner_id=owner_id, contact_id=contact_id)
+                    )
+
+            slugs = [
+                CATEGORY_TO_TYPE_SLUG[ck]
+                for ck in category_keys
+                if ck in CATEGORY_TO_TYPE_SLUG
+            ]
+            if slugs:
+                tpl_rows = await self.session.execute(
+                    select(ContactTypeTemplateModel.id).where(
+                        ContactTypeTemplateModel.slug.in_(slugs)
+                    )
+                )
+                auto_ids = [int(t) for t in tpl_rows.scalars().all()]
+                existing_rows = await self.session.execute(
+                    select(contact_contact_type_association.c.template_id).where(
+                        contact_contact_type_association.c.contact_id == contact_id
+                    )
+                )
+                existing_ids = [int(t) for t in existing_rows.scalars().all()]
+                merged = list(dict.fromkeys([*existing_ids, *auto_ids]))
+                await self.contact_repo.set_contact_types(contact_id, merged)
+        await self.session.flush()
 
     async def set_spam(self, contact_id: int, spam: bool) -> Optional[ContactResponse]:
         contact = await self.contact_repo.get_by_id(contact_id)
@@ -233,6 +343,8 @@ class ContactService:
 
         update_data: dict[str, object] = {}
         conflicting: list[str] = []
+        identifier_fields = ("phone", "email", "telegram_id", "telegram_username")
+        extra_identifiers: list[tuple[str, str]] = []
 
         def _fill(field: str, label: str) -> None:
             pv = getattr(primary, field)
@@ -242,13 +354,45 @@ class ContactService:
             if pv in (None, ""):
                 update_data[field] = sv
             elif pv != sv:
-                conflicting.append(f"{label}: {sv}")
+                if field in identifier_fields:
+                    extra_identifiers.append((field, str(sv)))
+                else:
+                    conflicting.append(f"{label}: {sv}")
 
-        _fill("name", "Имя")
+        # Имя: если вторичное непустое — заполняем пустое у primary,
+        # иначе склеиваем оба имени через пробел (а не в заметки-конфликт).
+        secondary_name = (secondary.name or "").strip()
+        primary_name = (primary.name or "").strip()
+        if secondary_name:
+            if not primary_name:
+                update_data["name"] = secondary_name
+            elif primary_name != secondary_name:
+                update_data["name"] = f"{primary_name} {secondary_name}"
+
         _fill("phone", "Телефон")
         _fill("email", "Email")
         _fill("telegram_id", "Telegram ID")
         _fill("telegram_username", "Telegram @")
+
+        secondary_identifiers = list(
+            (
+                await self.session.execute(
+                    select(ContactIdentifierModel).where(
+                        ContactIdentifierModel.contact_id == secondary_id
+                    )
+                )
+            ).scalars()
+        )
+        primary_identifiers = list(
+            (
+                await self.session.execute(
+                    select(ContactIdentifierModel).where(
+                        ContactIdentifierModel.contact_id == primary_id
+                    )
+                )
+            ).scalars()
+        )
+
         if secondary.birthday is not None:
             if primary.birthday is None:
                 update_data["birthday"] = secondary.birthday
@@ -276,6 +420,34 @@ class ContactService:
                 f"- {line}" for line in conflicting
             )
             update_data["notes"] = merged_notes
+
+        taken: set[tuple[str, str]] = set()
+        for row in primary_identifiers:
+            taken.add((row.channel, row.value))
+        for field in identifier_fields:
+            value = update_data.get(field, getattr(primary, field))
+            if value not in (None, ""):
+                taken.add((field, str(value)))
+
+        candidates = extra_identifiers + [
+            (row.channel, row.value) for row in secondary_identifiers
+        ]
+        for channel, value in candidates:
+            key = (channel, value)
+            if key in taken:
+                continue
+            taken.add(key)
+            self.session.add(
+                ContactIdentifierModel(
+                    owner_id=primary.owner_id,
+                    contact_id=primary_id,
+                    channel=channel,
+                    value=value,
+                )
+            )
+        for row in secondary_identifiers:
+            await self.session.delete(row)
+        await self.session.flush()
 
         # Освобождаем уникальные идентификаторы вторичного контакта ДО обновления
         # основного, чтобы не нарушить уникальные индексы (telegram_id, email).
@@ -680,6 +852,7 @@ class ContactService:
                 contact_contact_type_association.c.contact_id,
                 ContactTypeTemplateModel.name,
                 ContactTypeTemplateModel.id,
+                ContactTypeTemplateModel.sphere,
             )
             .join(
                 ContactTypeTemplateModel,
@@ -694,9 +867,59 @@ class ContactService:
         )
         type_names: dict[int, list[str]] = {}
         type_ids_map: dict[int, list[int]] = {}
-        for cid, name, tid in type_rows.all():
+        type_spheres_map: dict[int, list[str]] = {}
+        for cid, name, tid, sphere in type_rows.all():
             type_names.setdefault(cid, []).append(name)
             type_ids_map.setdefault(cid, []).append(tid)
+            type_spheres_map.setdefault(cid, []).append(sphere)
+
+        ident_rows = await self.session.execute(
+            select(
+                ContactIdentifierModel.contact_id,
+                ContactIdentifierModel.channel,
+                ContactIdentifierModel.value,
+            )
+            .where(ContactIdentifierModel.contact_id.in_(ids))
+            .order_by(ContactIdentifierModel.id)
+        )
+        ident_map: dict[int, list[ContactIdentifierResponse]] = {}
+        for cid, channel, value in ident_rows.all():
+            ident_map.setdefault(int(cid), []).append(
+                ContactIdentifierResponse(channel=channel, value=value)
+            )
+
+        sphere_rows = await self.session.execute(
+            select(ContactSphereModel.contact_id, ContactSphereModel.sphere).where(
+                ContactSphereModel.contact_id.in_(ids)
+            )
+        )
+        explicit_spheres_map: dict[int, set[str]] = {}
+        for cid, sphere in sphere_rows.all():
+            explicit_spheres_map.setdefault(int(cid), set()).add(sphere)
+
+        folder_rows = await self.session.execute(
+            select(
+                contact_folder_association.c.contact_id,
+                ContactFolderModel,
+            )
+            .join(
+                ContactFolderModel,
+                contact_folder_association.c.folder_id == ContactFolderModel.id,
+            )
+            .where(contact_folder_association.c.contact_id.in_(ids))
+            .order_by(ContactFolderModel.sort_order)
+        )
+        folders_map: dict[int, list[ContactFolderRef]] = {}
+        for cid, folder in folder_rows.all():
+            folders_map.setdefault(int(cid), []).append(
+                ContactFolderRef(
+                    id=folder.id,
+                    name=folder.name,
+                    color=folder.color,
+                    sphere=folder.sphere,
+                    parent_id=folder.parent_id,
+                )
+            )
 
         responses = []
         for contact in contacts:
@@ -722,6 +945,20 @@ class ContactService:
 
             resp.contact_types = type_names.get(cid, [])
             resp.contact_type_ids = type_ids_map.get(cid, [])
+            resp.identifiers = ident_map.get(cid, [])
+
+            folders = folders_map.get(cid, [])
+            resp.folders = folders
+            spheres = set(explicit_spheres_map.get(cid, set()))
+            spheres.update(f.sphere for f in folders if f.sphere)
+            spheres.update(type_spheres_map.get(cid, []))
+            if contact.life_sphere:
+                spheres.add(contact.life_sphere)
+            if contact.life_sphere == "spam":
+                resp.spheres = ["spam"]
+                resp.folders = []
+            else:
+                resp.spheres = sorted(spheres)
 
             responses.append(resp)
 
@@ -772,5 +1009,59 @@ class ContactService:
             )
         )
         resp.contact_type_ids = [int(t) for t in type_ids.scalars().all()]
+
+        ident_rows = await self.session.execute(
+            select(ContactIdentifierModel)
+            .where(ContactIdentifierModel.contact_id == contact.id)
+            .order_by(ContactIdentifierModel.id)
+        )
+        resp.identifiers = [
+            ContactIdentifierResponse(channel=row.channel, value=row.value)
+            for row in ident_rows.scalars()
+        ]
+
+        sphere_rows = await self.session.execute(
+            select(ContactSphereModel.sphere).where(
+                ContactSphereModel.contact_id == contact.id
+            )
+        )
+        explicit_spheres = set(sphere_rows.scalars().all())
+
+        folder_rows = await self.session.execute(
+            select(ContactFolderModel)
+            .join(
+                contact_folder_association,
+                contact_folder_association.c.folder_id == ContactFolderModel.id,
+            )
+            .where(contact_folder_association.c.contact_id == contact.id)
+            .order_by(ContactFolderModel.sort_order)
+        )
+        folders = list(folder_rows.scalars().all())
+        resp.folders = [
+            ContactFolderRef(
+                id=f.id, name=f.name, color=f.color, sphere=f.sphere, parent_id=f.parent_id
+            )
+            for f in folders
+        ]
+
+        type_spheres: set[str] = set()
+        if resp.contact_type_ids:
+            type_sphere_rows = await self.session.execute(
+                select(ContactTypeTemplateModel.sphere).where(
+                    ContactTypeTemplateModel.id.in_(resp.contact_type_ids)
+                )
+            )
+            type_spheres = set(type_sphere_rows.scalars().all())
+
+        spheres = set(explicit_spheres)
+        spheres.update(f.sphere for f in folders if f.sphere)
+        spheres.update(type_spheres)
+        if contact.life_sphere:
+            spheres.add(contact.life_sphere)
+        if contact.life_sphere == "spam":
+            resp.spheres = ["spam"]
+            resp.folders = []
+        else:
+            resp.spheres = sorted(spheres)
 
         return resp

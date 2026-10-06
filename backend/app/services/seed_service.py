@@ -35,27 +35,24 @@ def _column_exists(conn: Connection, table: str, column: str) -> bool:
 def seed_default_folders(conn: Connection) -> None:
     """Системные папки контактов BiziBox (идемпотентно по category_key).
 
-    Таксономия: папки привязаны к сфере (life_sphere), категории каналов
-    выделены category_key='channels' в каждой сфере.
+    Таксономия v2: сферы — personal (Семья/Друзья/Учёба/Группы), work
+    (Заказчики/Поставщики/Сотрудники). «Каналы» — отдельная сфера
+    life_sphere='channels', не папка. «Сервисы» — служебная категория.
 
     Схема-зависимый сид:
     - есть колонка sphere (новая схема, init_db) — новая таксономия со сферами;
-    - иначе (initial-миграция, колонки ещё нет) — исходные системные папки
-      без contact_type/sphere: сид выполняется в момент создания таблицы,
-      до добавления под-колонок таксономии.
+    - иначе (initial-миграция, колонки ещё нет) — категории без sphere,
+      sphere проставляется позже миграцией классификации.
     """
     if _column_exists(conn, "contact_folders", "sphere"):
         defaults = [
             ("Семья", "#ec4899", 1, "family", "personal"),
             ("Друзья", "#8b5cf6", 2, "friends", "personal"),
             ("Учёба", "#6366f1", 3, "study", "personal"),
-            ("Каналы", "#0ea5e9", 4, "channels", "personal"),
+            ("Группы", "#14b8a6", 4, "groups", "personal"),
             ("Заказчики", "#f59e0b", 1, "customers", "work"),
             ("Поставщики", "#10b981", 2, "suppliers", "work"),
-            ("Партнёры", "#3b82f6", 3, "partners", "work"),
-            ("Подрядчики", "#8b5cf6", 4, "contractors", "work"),
-            ("Сотрудники", "#ef4444", 5, "employees", "work"),
-            ("Каналы", "#0ea5e9", 6, "channels", "work"),
+            ("Сотрудники", "#ef4444", 3, "employees", "work"),
         ]
         for name, color, sort_order, category_key, sphere in defaults:
             conn.execute(
@@ -77,9 +74,12 @@ def seed_default_folders(conn: Connection) -> None:
     legacy = [
         ("Семья", "#ec4899", 1, "family"),
         ("Друзья", "#8b5cf6", 2, "friends"),
-        ("Группы", "#6366f1", 3, "groups"),
-        ("Сервисы", "#f59e0b", 4, "service"),
-        ("Каналы", "#0ea5e9", 5, "channels"),
+        ("Учёба", "#6366f1", 3, "study"),
+        ("Группы", "#14b8a6", 4, "groups"),
+        ("Сервисы", "#f59e0b", 5, "service"),
+        ("Заказчики", "#f59e0b", 6, "customers"),
+        ("Поставщики", "#10b981", 7, "suppliers"),
+        ("Сотрудники", "#ef4444", 8, "employees"),
     ]
     for name, color, sort_order, category_key in legacy:
         conn.execute(

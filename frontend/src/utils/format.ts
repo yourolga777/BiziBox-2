@@ -7,6 +7,35 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+export function formatMoney(amount: number | null | undefined): string {
+  if (amount == null || Number.isNaN(amount)) return '0 ₽'
+  return `${amount.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽`
+}
+
+/** Абсолютная дата и время: «29.09.2026, 14:30». */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  const date = parseDateTime(dateStr)
+  if (!date) return ''
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Абсолютная дата: «29.09.2026». */
+export function formatDate(dateStr: string | null | undefined): string {
+  const date = parseDateTime(dateStr)
+  if (!date) return ''
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
 /** Парсит дату: наивные строки бэкенда (без таймзоны) считает UTC. */
 export function parseDateTime(dateStr: string | null | undefined): Date | null {
   if (!dateStr) return null

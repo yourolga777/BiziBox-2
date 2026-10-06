@@ -63,9 +63,9 @@ describe('FolderEditDialog', () => {
     render(<FolderEditDialog open onClose={() => {}} />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(screen.getByText('Рабочие')).toBeInTheDocument();
+      expect(screen.getAllByText('Рабочие').length).toBeGreaterThan(0);
     });
-    expect(screen.getByText('Личные')).toBeInTheDocument();
+    expect(screen.getAllByText('Личные').length).toBeGreaterThan(0);
   });
 
   it('создание папки вызывает POST /api/folders (AC1)', async () => {

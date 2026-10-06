@@ -3,6 +3,7 @@ export type TaskStatus = 'new' | 'in_progress' | 'completed' | 'cancelled'
 export interface Task {
   id: number
   contact_id: number | null
+  message_id?: number | null
   title: string
   description: string | null
   status: TaskStatus
@@ -33,6 +34,7 @@ export interface TaskCreate {
   title: string
   description?: string | null
   contact_id?: number | null
+  message_id?: number | null
   due_date?: string | null
   status?: TaskStatus
   reminder_minutes?: number | null

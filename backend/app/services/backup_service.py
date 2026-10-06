@@ -13,6 +13,7 @@ BACKUP_TABLES = frozenset(
     {
         "contacts",
         "contact_folders",
+        "contact_identifiers",
         "contact_notes",
         "messages",
         "message_attachments",

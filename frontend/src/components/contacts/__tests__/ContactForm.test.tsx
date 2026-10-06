@@ -54,14 +54,10 @@ describe('ContactForm', () => {
     );
   });
 
-  it('shows folder select and merge section when editing', async () => {
+  it('shows folder tree and merge section when editing', async () => {
     render(<ContactForm initial={editContact} onSubmit={vi.fn()} onCancel={vi.fn()} onMerge={vi.fn()} />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByLabelText('Папка')).toBeTruthy());
-    const folder = screen.getByLabelText('Папка') as HTMLSelectElement;
-    await waitFor(() => expect(folder.querySelectorAll('option').length).toBeGreaterThanOrEqual(2));
-    expect(folder.textContent).toContain('Заказы');
-
+    await waitFor(() => expect(screen.getByText('Заказы')).toBeTruthy());
     expect(screen.getByText('Объединить с контактом')).toBeTruthy();
   });
 
@@ -100,36 +96,17 @@ describe('ContactForm', () => {
     expect(submitted.name).toBe('Новое Имя');
   });
 
-  it('submits a numeric folder_id when a folder is selected', async () => {
+  it('submits numeric folder_ids when a folder is selected', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<ContactForm initial={editContact} onSubmit={onSubmit} onCancel={vi.fn()} onMerge={vi.fn()} />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(screen.getByLabelText('Папка')).toBeTruthy());
-    const folder = screen.getByLabelText('Папка') as HTMLSelectElement;
-    await waitFor(() => expect(folder.querySelectorAll('option').length).toBeGreaterThanOrEqual(2));
-    await userEvent.selectOptions(screen.getByLabelText('Папка'), '10');
+    await waitFor(() => expect(screen.getByText('Заказы')).toBeTruthy());
+    await userEvent.click(screen.getByText('Заказы'));
     await userEvent.click(screen.getByText('Сохранить'));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
-    expect(submitted.folder_id).toBe(10);
-  });
-
-  it('does not save and shows folder_id error when folder value is not numeric', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
-    render(<ContactForm initial={editContact} onSubmit={onSubmit} onCancel={vi.fn()} onMerge={vi.fn()} />, { wrapper: createWrapper() });
-
-    await waitFor(() => expect(screen.getByLabelText('Папка')).toBeTruthy());
-    const folder = screen.getByLabelText('Папка') as HTMLSelectElement;
-    const invalidOption = document.createElement('option');
-    invalidOption.value = 'abc';
-    folder.appendChild(invalidOption);
-    await userEvent.selectOptions(screen.getByLabelText('Папка'), 'abc');
-    await userEvent.click(screen.getByText('Сохранить'));
-
-    await waitFor(() => expect(screen.getByText('Папка')).toBeTruthy());
-    expect(screen.getByLabelText('Папка').nextElementSibling?.textContent).toBeTruthy();
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(submitted.folder_ids).toEqual([10]);
   });
 
   it('does not save and shows error when creating with empty name/phone/email', async () => {
@@ -149,10 +126,10 @@ describe('ContactForm', () => {
   });
 
   it('валидирует некорректную дату рождения (AC3)', () => {
-    const invalid = contactSchema.safeParse({ birthday: 'not-a-date', folder_id: '' });
+    const invalid = contactSchema.safeParse({ birthday: 'not-a-date' });
     expect(invalid.success).toBe(false);
 
-    const futureOk = contactSchema.safeParse({ birthday: '1990-05-15', folder_id: '' });
+    const futureOk = contactSchema.safeParse({ birthday: '1990-05-15' });
     expect(futureOk.success).toBe(true);
   });
 

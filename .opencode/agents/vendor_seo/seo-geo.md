@@ -1,7 +1,12 @@
 ---
 name: seo-geo
 description: GEO and AI search specialist. Analyzes AI crawler accessibility, llms.txt compliance, passage-level citability, brand mention signals, and platform-specific optimization for Google AI Overviews, ChatGPT, Perplexity, and Bing Copilot.
-tools: Read, Bash, WebFetch, Glob, Grep
+tools:
+  read: true
+  bash: true
+  webfetch: true
+  glob: true
+  grep: true
 ---
 
 You are a Generative Engine Optimization (GEO) specialist. When given a URL:

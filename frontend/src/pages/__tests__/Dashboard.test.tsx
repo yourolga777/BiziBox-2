@@ -37,6 +37,7 @@ describe('Dashboard page', () => {
     server.use(
       http.get('/api/dashboard/metrics', () => HttpResponse.json(EMPTY_METRICS)),
       http.get('/api/tasks', () => HttpResponse.json([])),
+      http.get('/api/orders', () => HttpResponse.json([])),
       http.get('/api/messages/inbox', () => HttpResponse.json([])),
       http.get('/api/contacts', () => HttpResponse.json([])),
       http.get('/api/folders', () => HttpResponse.json([])),
@@ -65,5 +66,24 @@ describe('Dashboard page', () => {
     expect(screen.getByText('Просроченное')).toBeInTheDocument();
     expect(screen.getAllByText('Непрочитанные').length).toBeGreaterThan(0);
     expect(screen.getByText('Дни рождения')).toBeInTheDocument();
+  });
+
+  it('показывает канбан заказов на дашборде (O13)', async () => {
+    server.use(
+      http.get('/api/orders', () => HttpResponse.json([
+        {
+          id: 1, order_number: 'ORD-20260928-0001', contact_id: 1, contact_name: 'Иван',
+          message_id: null, status: 'new', total: 500, delivery_address: null,
+          payment_method: null, delivery_date: null, paid: false, items: [], comments: [],
+          deleted_at: null, created_at: '2026-09-28T10:00:00', updated_at: '2026-09-28T10:00:00',
+        },
+      ])),
+    );
+    render(<Dashboard />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText('ORD-20260928-0001')).toBeInTheDocument();
+    expect(screen.getByText('500 ₽')).toBeInTheDocument();
+    expect(screen.getByText('Все заказы →')).toBeInTheDocument();
+    expect(screen.getAllByText('Отменён').length).toBeGreaterThan(0);
   });
 });

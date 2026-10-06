@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,10 @@ class ContactFolderUpdate(BaseModel):
     category_key: Optional[str] = Field(None, max_length=50)
     sphere: Optional[str] = Field(None, max_length=20)
     parent_id: Optional[int] = None
+
+
+class FolderReorderRequest(BaseModel):
+    ids: List[int] = Field(min_length=1)
 
 
 class ContactFolderResponse(BaseModel):

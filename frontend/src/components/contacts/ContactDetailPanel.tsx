@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Dialog } from '@headlessui/react'
-import { Mail, Phone, MessageCircle, Pencil, Trash2, ListTodo, Heart, XCircle, Folder, Tag, X, Ban, ShieldCheck } from 'lucide-react'
+import { Mail, Phone, MessageCircle, Pencil, Trash2, ListTodo, Heart, XCircle, Folder, Tag, X, Ban, ShieldCheck, ChevronRight, CircleDashed, Check } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import Card from '../common/Card'
 import Timeline from './Timeline'
@@ -10,9 +10,22 @@ import { contactApi } from '../../api/client'
 import { useUpdateContactMutation, useFoldersQuery } from '../../hooks/queries'
 import { CONTACT_SPHERE_META } from '../../types/contactType'
 import { useToast } from '../common/Toast'
-import type { Contact, ContactSphere } from '../../types/contact'
+import type { Contact, ContactFolder, ContactIdentifierChannel, ContactSphere } from '../../types/contact'
 
-const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work']
+const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work', 'channels']
+
+const IDENTIFIER_LABELS: Record<ContactIdentifierChannel, string> = {
+  phone: 'Телефон',
+  email: 'Email',
+  telegram_id: 'TG ID',
+  telegram_username: 'TG @',
+}
+
+function IdentifierIcon({ channel }: { channel: ContactIdentifierChannel }) {
+  if (channel === 'phone') return <Phone className="w-4 h-4 text-gray-400 shrink-0" />
+  if (channel === 'email') return <Mail className="w-4 h-4 text-gray-400 shrink-0" />
+  return <MessageCircle className="w-4 h-4 text-gray-400 shrink-0" />
+}
 
 function ClassifyDialog({
   contact,
@@ -21,24 +34,68 @@ function ClassifyDialog({
   contact: Contact
   onClose: () => void
 }) {
-  const [sphere, setSphere] = useState<ContactSphere>(contact.life_sphere === 'spam' ? 'personal' : (contact.life_sphere || 'personal'))
-  const [folderId, setFolderId] = useState<number | null>(null)
+  const initialSphere: ContactSphere | null =
+    contact.life_sphere === 'spam' ? 'spam' : (contact.life_sphere || null)
+  const [sphere, setSphere] = useState<ContactSphere | null>(initialSphere)
+  const [selectedFolderIds, setSelectedFolderIds] = useState<number[]>(
+    contact.folders?.map(f => f.id) ?? [],
+  )
+  const [expandedSphere, setExpandedSphere] = useState<ContactSphere | null>(
+    initialSphere && SPHERES_WITH_FOLDERS.includes(initialSphere) ? initialSphere : null,
+  )
   const { data: folders = [] } = useFoldersQuery()
   const updateContact = useUpdateContactMutation()
 
-  const availableFolders = folders.filter(
-    (f) => !f.parent_id && (f.sphere || 'personal') === sphere,
-  )
+  const childrenOf = (parentId: number | null) =>
+    folders.filter(f => (f.parent_id ?? null) === parentId)
+
+  const toggleFolder = (folder: ContactFolder) => {
+    setSelectedFolderIds(prev =>
+      prev.includes(folder.id) ? prev.filter(id => id !== folder.id) : [...prev, folder.id],
+    )
+  }
 
   const handleSave = async () => {
-    const data: { life_sphere: ContactSphere; folder_id?: number | null } = { life_sphere: sphere }
-    if (sphere === 'personal' || sphere === 'work') {
-      data.folder_id = folderId
-    } else {
-      data.folder_id = null
+    const isFolderSphere = !!sphere && SPHERES_WITH_FOLDERS.includes(sphere)
+    const data: { life_sphere: ContactSphere | null; folder_ids: number[] } = {
+      life_sphere: sphere,
+      folder_ids: isFolderSphere ? selectedFolderIds : [],
     }
     await updateContact.mutateAsync({ id: contact.id, data })
     onClose()
+  }
+
+  const handleReset = async () => {
+    await updateContact.mutateAsync({
+      id: contact.id,
+      data: { life_sphere: null, folder_ids: [] },
+    })
+    onClose()
+  }
+
+  const renderFolder = (folder: ContactFolder, depth: number) => {
+    const children = childrenOf(folder.id)
+    const active = selectedFolderIds.includes(folder.id)
+    return (
+      <div key={folder.id}>
+        <button
+          type="button"
+          onClick={() => toggleFolder(folder)}
+          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors ${
+            active ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+          }`}
+          style={{ paddingLeft: 8 + depth * 14 }}
+        >
+          <span
+            className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: folder.color || '#6b7280' }}
+          />
+          <span className="flex-1 text-left truncate">{folder.name}</span>
+          {active && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+        </button>
+        {children.map(c => renderFolder(c, depth + 1))}
+      </div>
+    )
   }
 
   return (
@@ -53,50 +110,77 @@ function ClassifyDialog({
             </button>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Сфера</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(['personal', 'work', 'spam'] as ContactSphere[]).map(s => (
+          <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+            <button
+              type="button"
+              onClick={() => { setSphere(null); setSelectedFolderIds([]) }}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors ${
+                sphere === null && selectedFolderIds.length === 0 ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <CircleDashed className="w-4 h-4 text-gray-400" />
+              Другое (без сферы)
+            </button>
+
+            {(['personal', 'work', 'channels', 'spam'] as ContactSphere[]).map(s => {
+              const showFolders = SPHERES_WITH_FOLDERS.includes(s)
+              const expanded = expandedSphere === s
+              const isActive = sphere === s && selectedFolderIds.length === 0
+              return (
+                <div key={s}>
                   <button
-                    key={s}
-                    onClick={() => { setSphere(s); setFolderId(null) }}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                      sphere === s ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-700 border-gray-200 hover:bg-gray-50'
+                    type="button"
+                    onClick={() => {
+                      setSphere(s)
+                      setSelectedFolderIds([])
+                      if (showFolders) setExpandedSphere(expanded ? null : s)
+                    }}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors ${
+                      isActive ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    {CONTACT_SPHERE_META[s].label}
+                    <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                    <Tag className="w-4 h-4 text-gray-400" />
+                    <span className="flex-1 text-left">{CONTACT_SPHERE_META[s].label}</span>
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {SPHERES_WITH_FOLDERS.includes(sphere) && (
-              <div>
-                <label htmlFor="classify-folder" className="block text-sm font-medium text-gray-700 mb-1">Папка</label>
-                <select
-                  id="classify-folder"
-                  value={folderId === null ? '' : String(folderId)}
-                  onChange={e => setFolderId(e.target.value === '' ? null : Number(e.target.value))}
-                  className="w-full px-3 py-2 border rounded-lg text-sm"
-                >
-                  <option value="">Без папки</option>
-                  {availableFolders.map(f => (
-                    <option key={f.id} value={f.id}>{f.name} ({CONTACT_SPHERE_META[sphere].label})</option>
-                  ))}
-                </select>
-              </div>
-            )}
+                  {showFolders && expanded && (
+                    <div className="ml-3 pl-2 border-l border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => { setSphere(s); setSelectedFolderIds([]) }}
+                        className={`w-full text-left px-2 py-1.5 text-sm rounded-lg transition-colors ${
+                          isActive ? 'text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        Без папки
+                      </button>
+                      {childrenOf(null)
+                        .filter(f => (f.sphere || 'personal') === s)
+                        .map(f => renderFolder(f, 0))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
-            <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg">Отмена</button>
+          <div className="flex items-center justify-between gap-2 pt-4">
             <button
-              onClick={handleSave}
-              className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg"
+              onClick={handleReset}
+              disabled={!contact.life_sphere && (contact.folders?.length ?? 0) === 0}
+              className="px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Сохранить
+              Сбросить
             </button>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg">Отмена</button>
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg"
+              >
+                Сохранить
+              </button>
+            </div>
           </div>
         </Dialog.Panel>
       </div>
@@ -121,9 +205,21 @@ export default function ContactDetailPanel({
   const { showToast } = useToast()
 
   const isSpam = contact.life_sphere === 'spam'
-  const isDefined = !!contact.life_sphere || contact.folder_id !== null
+  const isDefined =
+    (contact.spheres?.length ?? 0) > 0 ||
+    (contact.folders?.length ?? 0) > 0 ||
+    contact.contact_types.length > 0 ||
+    !!contact.life_sphere
 
-  const folderName = folders.find(f => f.id === contact.folder_id)?.name
+  const folderPath = (f: { id: number; name: string; parent_id?: number | null }) => {
+    const parts: string[] = []
+    let cur: { id: number; name: string; parent_id?: number | null } | undefined = f
+    while (cur) {
+      parts.unshift(cur.name)
+      cur = cur.parent_id ? folders.find(x => x.id === cur!.parent_id) : undefined
+    }
+    return parts.join(' / ')
+  }
 
   const handleToggleFavorite = async () => {
     await updateContact.mutateAsync({ id: contact.id, data: { is_favorite: !contact.is_favorite } })
@@ -225,25 +321,25 @@ export default function ContactDetailPanel({
               </span>
             )}
             {isDefined ? (
-              <div className="flex items-center gap-2 text-sm">
-                {contact.life_sphere && (
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${CONTACT_SPHERE_META[contact.life_sphere].bg} ${CONTACT_SPHERE_META[contact.life_sphere].color}`}>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {(contact.spheres ?? []).map(s => (
+                  <span key={s} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${CONTACT_SPHERE_META[s as ContactSphere]?.bg ?? 'bg-gray-100'} ${CONTACT_SPHERE_META[s as ContactSphere]?.color ?? 'text-gray-600'}`}>
                     <Tag className="w-3 h-3" />
-                    {CONTACT_SPHERE_META[contact.life_sphere].label}
+                    {CONTACT_SPHERE_META[s as ContactSphere]?.label ?? s}
                   </span>
-                )}
+                ))}
                 {contact.contact_types.map((t) => (
                   <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700">
                     <Tag className="w-3 h-3" />
                     {t}
                   </span>
                 ))}
-                {folderName && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+                {(contact.folders ?? []).map(f => (
+                  <span key={f.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
                     <Folder className="w-3 h-3" />
-                    {folderName}
+                    {folderPath(f)}
                   </span>
-                )}
+                ))}
               </div>
             ) : (
               <button
@@ -279,6 +375,20 @@ export default function ContactDetailPanel({
               <div className="flex items-center gap-2 text-gray-600">
                 <Mail className="w-4 h-4 text-gray-400 shrink-0" />
                 <span>{contact.email}</span>
+              </div>
+            )}
+            {(contact.identifiers ?? []).length > 0 && (
+              <div className="pt-1 space-y-1 border-t border-gray-100">
+                <p className="text-xs font-medium text-gray-400">Другие идентификаторы</p>
+                {(contact.identifiers ?? []).map((ident) => (
+                  <div key={`${ident.channel}:${ident.value}`} className="flex items-center gap-2 text-sm text-gray-600">
+                    <IdentifierIcon channel={ident.channel} />
+                    <span className="break-all">{ident.value}</span>
+                    <span className="text-xs text-gray-400 shrink-0">
+                      {IDENTIFIER_LABELS[ident.channel]}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
             {contact.birthday && (

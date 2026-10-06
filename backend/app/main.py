@@ -30,11 +30,15 @@ from .routers import (
     export_router,
     import_router,
     messages_router,
+    orders_router,
     outbox_router,
+    products_router,
     reminders_router,
     settings_router,
     startup_router,
+    suppliers_router,
     tasks_router,
+    vpn_help_router,
 )
 from .routers.channels import cleanup_pending_auths
 from .services.channel_message_service import ChannelMessageService
@@ -242,6 +246,9 @@ app.include_router(reminders_router, prefix="/api/reminders", tags=["reminders"]
 app.include_router(contacts_router, prefix="/api/contacts", tags=["contacts"])
 app.include_router(contact_folders_router, prefix="/api/folders", tags=["folders"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(orders_router, prefix="/api/orders", tags=["orders"])
+app.include_router(products_router, prefix="/api/products", tags=["products"])
+app.include_router(suppliers_router, prefix="/api/suppliers", tags=["suppliers"])
 app.include_router(channels_router, prefix="/api/channels", tags=["channels"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(export_router, prefix="/api/export", tags=["export"])
@@ -249,6 +256,7 @@ app.include_router(import_router, prefix="/api/import", tags=["import"])
 app.include_router(backup_router, prefix="/api/backup", tags=["backup"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(startup_router, prefix="/api/startup", tags=["startup"])
+app.include_router(vpn_help_router, prefix="/api/vpn-help", tags=["vpn-help"])
 
 
 @app.get("/api/health")

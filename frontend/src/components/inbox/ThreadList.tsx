@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
-import { Paperclip, Download, Copy, Reply, CheckCircle, CalendarPlus, Trash2, Forward } from 'lucide-react'
+import { Paperclip, Download, Copy, Reply, CheckCircle, CalendarPlus, Trash2, Forward, PackagePlus } from 'lucide-react'
 import { formatRelativeTime, formatBytes, formatDayLabel } from '../../utils/format'
 import { autolinkText } from '../../utils/autolink'
 import { useToast } from '../common/Toast'
@@ -35,6 +35,7 @@ interface ThreadListProps {
   onReply?: (message: Message) => void
   onCreateTask?: (message: Message) => void
   onCreateEvent?: (message: Message) => void
+  onCreateOrder?: (message: Message) => void
   onDeleteMessage?: (message: Message) => void
   onForward?: (message: Message) => void
 }
@@ -46,7 +47,7 @@ interface ContextMenuState {
 }
 
 export const ThreadList = forwardRef<HTMLDivElement, ThreadListProps>(
-  ({ messages, hasMore, loadingMore, onLoadMore, onReply, onCreateTask, onCreateEvent, onDeleteMessage, onForward }, ref) => {
+  ({ messages, hasMore, loadingMore, onLoadMore, onReply, onCreateTask, onCreateEvent, onCreateOrder, onDeleteMessage, onForward }, ref) => {
     const [preview, setPreview] = useState<{ messageId: number; attachment: MessageAttachment } | null>(null)
     const [menu, setMenu] = useState<ContextMenuState | null>(null)
     const menuRef = useRef<HTMLDivElement>(null)
@@ -119,10 +120,15 @@ export const ThreadList = forwardRef<HTMLDivElement, ThreadListProps>(
       onCreateTask?.(msg)
     }
 
-    const handleCreateEvent = (msg: Message) => {
-      setMenu(null)
-      onCreateEvent?.(msg)
-    }
+  const handleCreateEvent = (msg: Message) => {
+    setMenu(null)
+    onCreateEvent?.(msg)
+  }
+
+  const handleCreateOrder = (msg: Message) => {
+    setMenu(null)
+    onCreateOrder?.(msg)
+  }
 
     const handleDeleteMessage = (msg: Message) => {
       setMenu(null)
@@ -308,6 +314,16 @@ export const ThreadList = forwardRef<HTMLDivElement, ThreadListProps>(
               >
                 <CheckCircle className="w-4 h-4 text-purple-400" />
                 Создать задачу
+              </button>
+            )}
+            {onCreateOrder && (
+              <button
+                type="button"
+                onClick={() => handleCreateOrder(menu.message)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <PackagePlus className="w-4 h-4 text-orange-400" />
+                Создать заказ
               </button>
             )}
             {onCreateEvent && (

@@ -37,6 +37,8 @@ def _proxy_from_config(cfg: Any) -> Optional[dict[str, Any]]:
     # записями proxy_config, где флага enabled не было.
     if cfg.get("enabled") is False:
         return None
+    if cfg.get("mode") in ("direct", "system_vpn"):
+        return None
     host = cfg.get("host")
     port = cfg.get("port")
     if not host or not port:

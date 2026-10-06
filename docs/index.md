@@ -17,6 +17,8 @@
 - [Подключение каналов](user-guide/channels.md)
 - [Входящие](user-guide/inbox.md)
 - [Контакты](user-guide/contacts.md)
+- [Сортировка и классификация](user-guide/sorting-classification.md)
+- [Классификация: предложения по улучшению](user-guide/classification-concepts.html)
 - [Задачи](user-guide/tasks.md)
 - [Календарь](user-guide/calendar.md)
 - [Дашборд](user-guide/dashboard.md)

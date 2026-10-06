@@ -1,9 +1,8 @@
-# BiziBox v2.1.0 — build-release.ps1
-# Полный цикл сборки релиза: фронтенд → гейты → PyInstaller → Inno Setup.
+﻿# BiziBox v2.1.0 — build-release.ps1
+# Полный цикл сборки релиза: фронтенд → гейты → PyInstaller (portable exe).
 # Запуск из корня репозитория:
 #   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
-# Требования: Node.js 20+, Python 3.13 (backend\.venv), PyInstaller в venv,
-# Inno Setup 6 (ISCC.exe в PATH или стандартном месте).
+# Требования: Node.js 20+, Python 3.13 (backend\.venv), PyInstaller в venv.
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -58,19 +57,4 @@ Invoke-Step "PyInstaller: BiziBox.spec" {
     Pop-Location
 }
 
-$iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-if (-not $iscc) {
-    $candidate = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-    if (Test-Path $candidate) { $iscc = $candidate }
-}
-
-if ($iscc) {
-    Invoke-Step "Inno Setup: installer\bizibox.iss" {
-        & $iscc "$RepoRoot\installer\bizibox.iss"
-    }
-    Write-Host "Установщик: $RepoRoot\installer\dist\installer\BiziBox-Setup-2.1.0.exe" -ForegroundColor Green
-} else {
-    Write-Warning "ISCC.exe не найден — пропускаю сборку инсталлятора (exe собран: backend\dist\BiziBox.exe)."
-}
-
-Write-Host "Сборка завершена." -ForegroundColor Green
+Write-Host "Сборка завершена: $RepoRoot\backend\dist\BiziBox.exe" -ForegroundColor Green

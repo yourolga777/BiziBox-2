@@ -25,8 +25,9 @@ class ContactRepository(BaseRepository[ContactModel]):
         subsection: Optional[str] = None,
         life_sphere: Optional[str] = None,
         contact_type_ids: Optional[List[int]] = None,
-        folder_id: Optional[int] = None,
+        folder_ids: Optional[List[int]] = None,
         is_favorite: Optional[bool] = None,
+        unclassified: bool = False,
         sort_by: str = "name",
         sort_order: str = "asc",
         skip: int = 0,
@@ -81,8 +82,14 @@ class ContactRepository(BaseRepository[ContactModel]):
                 )
             )
 
-        if folder_id is not None:
-            query = query.where(self.model.folder_id == folder_id)
+        if folder_ids is not None:
+            query = query.where(self.model.folder_id.in_(folder_ids))
+
+        if unclassified:
+            query = query.where(
+                self.model.life_sphere.is_(None),
+                self.model.folder_id.is_(None),
+            )
 
         if is_favorite is not None:
             query = query.where(self.model.is_favorite.is_(is_favorite))

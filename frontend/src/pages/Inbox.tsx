@@ -1,4 +1,5 @@
-import { memo, useState, useRef, useCallback, useMemo, useEffect, Fragment } from 'react'
+import { memo, useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { InboxIcon, RefreshCw, MessageSquare, Clock, Mail, ArrowUpDown, CheckSquare, Star, UserPlus, ShieldAlert, Search, Plus, Pencil, Tag, Check, X } from 'lucide-react'
@@ -8,17 +9,16 @@ import Button from '../components/common/Button'
 import Card from '../components/common/Card'
 import { SkeletonList } from '../components/common/Skeleton'
 import { useToast } from '../components/common/Toast'
-import { useThreadsQuery, useSpamCountQuery, useContactsQuery, useChannelsQuery, useFoldersQuery, useMessageSearchQuery } from '../hooks/queries'
+import { useThreadsQuery, useSpamCountQuery, useSpamMessagesQuery, useContactsQuery, useChannelsQuery, useFoldersQuery, useMessageSearchQuery } from '../hooks/queries'
 import { channelApi, messageApi, contactApi } from '../api/client'
 import { displayNameShort } from '../utils/contactDisplayName'
 import { formatRelativeTime, formatLastPolled } from '../utils/format'
 import { getChannelIcon } from '../utils/channelIcons'
-import SpamFeedDialog from '../components/inbox/SpamFeedDialog'
-import FolderEditDialog from '../components/inbox/FolderEditDialog'
+import FolderEditDialog from '../components/common/FolderEditDialog'
 import ComposerModal from '../components/inbox/ComposerModal'
 import { filterChats } from '../utils/filterChats'
 import { CONTACT_SPHERES, CONTACT_SPHERE_META } from '../types/contactType'
-import type { Contact } from '../types/contact'
+import type { Contact, ContactFolder } from '../types/contact'
 import type { ContactSphere } from '../types/contact'
 import type { Message } from '../types/message'
 import type { ChatItem, Thread } from '../types/inbox'
@@ -27,13 +27,15 @@ const POLL_INTERVAL = 10000
 
 type SortMode = 'date' | 'unread'
 
-type InboxTab = 'all' | 'favorites' | 'new' | ContactSphere
+type InboxTab = 'all' | 'favorites' | 'new' | 'other' | ContactSphere
 
 const TABS: { key: InboxTab; label: string; icon?: typeof Star }[] = [
   { key: 'favorites', label: 'Избранное', icon: Star },
   { key: 'new', label: 'Новое', icon: UserPlus },
-  { key: 'personal', label: 'Личное', icon: Tag },
   { key: 'work', label: 'Работа', icon: Tag },
+  { key: 'personal', label: 'Личное', icon: Tag },
+  { key: 'channels', label: 'Каналы', icon: Tag },
+  { key: 'other', label: 'Другое', icon: InboxIcon },
   { key: 'spam', label: 'Спам', icon: ShieldAlert },
   { key: 'all', label: 'Все' },
 ]
@@ -57,7 +59,7 @@ function loadTabOrder(): InboxTab[] {
   return TABS.map(t => t.key)
 }
 
-const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work']
+const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work', 'channels']
 
 const SORT_OPTIONS: { key: SortMode; label: string; icon: typeof ArrowUpDown }[] = [
   { key: 'date', label: 'По дате', icon: ArrowUpDown },
@@ -139,7 +141,7 @@ function Inbox() {
   const sortMode: SortMode = (searchParams.get('sort') as SortMode) || 'unread'
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const [spamDialogOpen, setSpamDialogOpen] = useState(false)
+  const [spamLoading, setSpamLoading] = useState(false)
   const [folderEditOpen, setFolderEditOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [folderEditMode, setFolderEditMode] = useState<'create' | 'manage'>('manage')
@@ -152,6 +154,7 @@ function Inbox() {
   const threadsQuery = useThreadsQuery({ refetchInterval: POLL_INTERVAL })
   const { data: spamCountData } = useSpamCountQuery(POLL_INTERVAL)
   const spamCount = spamCountData?.count ?? 0
+  const spamMessagesQuery = useSpamMessagesQuery({ enabled: tab === 'spam' })
 
   const threads: Thread[] = threadsQuery.data ?? []
   const isLoading = threadsQuery.isLoading
@@ -165,7 +168,7 @@ function Inbox() {
   const showFavorites = tab === 'favorites'
   const showOnlyNew = tab === 'new'
   const activeSphere: ContactSphere | null =
-    tab === 'personal' || tab === 'work' ? tab : null
+    tab === 'personal' || tab === 'work' || tab === 'channels' ? tab : null
   const activeFolder: number | null = activeSphere ? folderId : null
 
   const foldersOfSphere = useMemo(() => {
@@ -173,27 +176,6 @@ function Inbox() {
       (f) => !f.parent_id && (f.sphere || 'personal') === tab,
     )
   }, [folders, tab])
-
-  const userFolders = useMemo(() => {
-    return folders.filter((f) => !f.category_key)
-  }, [folders])
-
-  const channelFolderIds = useMemo(() => {
-    const byId = new Map(folders.map(f => [f.id, f]))
-    const isChannel = (fid: number | null): boolean => {
-      const seen = new Set<number>()
-      let cur = fid
-      while (cur != null && !seen.has(cur)) {
-        const f = byId.get(cur)
-        if (!f) return false
-        if (f.category_key === 'channels') return true
-        seen.add(cur)
-        cur = f.parent_id
-      }
-      return false
-    }
-    return new Set(folders.filter(f => isChannel(f.id)).map(f => f.id))
-  }, [folders])
 
   const searchActive = searchQuery.trim().length > 0
   const { data: searchResults = [] } = useMessageSearchQuery(searchActive ? searchQuery : '')
@@ -277,8 +259,41 @@ function Inbox() {
     return result
   }, [searchActive, searchResults, threads, contactsMap])
 
+  const spamChats = useMemo<ChatItem[]>(() => {
+    const messages = spamMessagesQuery.data ?? []
+    const grouped = new Map<number, Message[]>()
+    for (const msg of messages) {
+      const list = grouped.get(msg.contact_id)
+      if (list) list.push(msg)
+      else grouped.set(msg.contact_id, [msg])
+    }
+    const result: ChatItem[] = []
+    for (const [contactId, msgs] of grouped) {
+      const contact = contactsMap.get(contactId)
+      if (!contact) continue
+      const sorted = [...msgs].sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+      )
+      result.push({
+        contact,
+        lastMessage: sorted[0],
+        unreadCount: msgs.filter((m) => m.status === 'unread').length,
+        channels: new Set(msgs.map((m) => m.channel)),
+      })
+    }
+    return result
+  }, [spamMessagesQuery.data, contactsMap])
+
   const favoriteCount = useMemo(() => {
     return allChats.filter((c) => c.contact.is_favorite).length
+  }, [allChats])
+
+  const otherCount = useMemo(() => {
+    return allChats.filter((c) => c.contact.life_sphere == null && c.contact.folder_id == null).length
+  }, [allChats])
+
+  const channelsCount = useMemo(() => {
+    return allChats.filter((c) => c.contact.life_sphere === 'channels').length
   }, [allChats])
 
   const folderCounts = useMemo(() => {
@@ -291,13 +306,14 @@ function Inbox() {
   }, [allChats])
 
   const chats = useMemo(() => {
-    const filtered = filterChats(allChats, {
+    const base = tab === 'spam' ? spamChats : allChats
+    const filtered = filterChats(base, {
       channel: activeChannel,
-      folder: activeFolder,
+      folder: tab === 'other' ? 'other' : activeFolder,
       showOnlyNew,
       favorites: showFavorites,
       searchQuery: '',
-      lifeSphere: activeSphere,
+      lifeSphere: tab === 'spam' ? 'spam' : activeSphere,
     })
 
     if (sortMode === 'date') {
@@ -316,18 +332,18 @@ function Inbox() {
       })
     }
     return filtered
-  }, [allChats, activeChannel, activeFolder, showOnlyNew, showFavorites, searchQuery, sortMode, activeSphere])
+  }, [allChats, spamChats, activeChannel, activeFolder, showOnlyNew, showFavorites, searchQuery, sortMode, activeSphere, tab])
 
   const totalChats = useMemo(() => {
-    return filterChats(allChats, {
+    return filterChats(tab === 'spam' ? spamChats : allChats, {
       channel: activeChannel,
-      folder: null,
+      folder: tab === 'other' ? 'other' : null,
       showOnlyNew,
       favorites: showFavorites,
       searchQuery: '',
-      lifeSphere: activeSphere,
+      lifeSphere: tab === 'spam' ? 'spam' : activeSphere,
     }).length
-  }, [allChats, activeChannel, showOnlyNew, showFavorites, searchQuery, activeSphere])
+  }, [allChats, spamChats, activeChannel, showOnlyNew, showFavorites, searchQuery, activeSphere, tab])
 
   const getContactName = useCallback((contactId: number): string | null => {
     const c = contactsRef.current.get(contactId)
@@ -372,7 +388,6 @@ function Inbox() {
   const handleTabChange = (t: InboxTab) => {
     setTab(t)
     setFolderId(null)
-    if (t === 'spam') setSpamDialogOpen(true)
   }
 
   const handleFolderChange = (fid: number | null) => {
@@ -389,12 +404,39 @@ function Inbox() {
 
   const handleLoadChannels = async () => {
     try {
+      refetch()
       await messageApi.loadChannels(folderId ?? undefined)
       refetch()
       showToast('Каналы загружены', 'success')
     } catch {
       showToast('Ошибка загрузки', 'error')
     }
+  }
+
+  const handleLoadSpam = async () => {
+    if (spamLoading) return
+    setSpamLoading(true)
+    queryClient.invalidateQueries({ queryKey: ['messages', 'spam'] })
+    try {
+      await messageApi.loadSpam()
+      queryClient.invalidateQueries({ queryKey: ['messages', 'spam'] })
+      queryClient.invalidateQueries({ queryKey: ['messages', 'spam', 'count'] })
+      showToast('Спам загружен', 'success')
+    } catch {
+      showToast('Не удалось загрузить спам', 'error')
+    } finally {
+      setSpamLoading(false)
+    }
+  }
+
+  const handleShowLoadedChannels = () => {
+    refetch()
+    showToast('Показаны загруженные каналы', 'success')
+  }
+
+  const handleShowLoadedSpam = () => {
+    spamMessagesQuery.refetch()
+    showToast('Показан загруженный спам', 'success')
   }
 
   const orderedTabs = useMemo(() => {
@@ -462,6 +504,16 @@ function Inbox() {
     }
   }
 
+  const renderFolderOption = (folder: ContactFolder, depth: number): ReactNode[] => {
+    const children = folders.filter(f => f.parent_id === folder.id)
+    return [
+      <option key={folder.id} value={`folder:${folder.id}`}>
+        {'\u00A0\u00A0\u00A0\u00A0'.repeat(depth)}{depth > 0 ? '↳ ' : ''}{folder.name}
+      </option>,
+      ...children.flatMap(c => renderFolderOption(c, depth + 1)),
+    ]
+  }
+
   if (isLoading && threads.length === 0) {
     return (
       <div className="space-y-6">
@@ -508,7 +560,7 @@ function Inbox() {
                 if (!v) return
                 if (v.startsWith('folder:')) {
                   const fid = Number(v.slice('folder:'.length))
-                  const folder = userFolders.find(f => f.id === fid)
+                  const folder = folders.find(f => f.id === fid)
                   if (folder) handleBulkClassify((folder.sphere || 'personal') as ContactSphere, fid)
                 } else {
                   handleBulkClassify(v as ContactSphere)
@@ -518,23 +570,15 @@ function Inbox() {
             >
               <option value="" disabled>Классифицировать…</option>
               {CONTACT_SPHERES.map(s => {
-                const sphereFolders = userFolders.filter(f => (f.sphere || 'personal') === s)
+                const sphereFolders = folders.filter(f => (f.sphere || 'personal') === s)
                 const topLevel = sphereFolders.filter(f => !f.parent_id)
-                const subfoldersOf = (pid: number) => sphereFolders.filter(f => f.parent_id === pid)
                 if (s === 'spam' || topLevel.length === 0) {
                   return <option key={s} value={s}>{CONTACT_SPHERE_META[s].label}</option>
                 }
                 return (
                   <optgroup key={s} label={CONTACT_SPHERE_META[s].label}>
                     <option value={s}>{CONTACT_SPHERE_META[s].label} (без папки)</option>
-                    {topLevel.map(f => (
-                      <Fragment key={f.id}>
-                        <option value={`folder:${f.id}`}>{f.name}</option>
-                        {subfoldersOf(f.id).map(sf => (
-                          <option key={sf.id} value={`folder:${sf.id}`}>&nbsp;&nbsp;&nbsp;&nbsp;↳ {sf.name}</option>
-                        ))}
-                      </Fragment>
-                    ))}
+                    {topLevel.map(f => renderFolderOption(f, 0))}
                   </optgroup>
                 )
               })}
@@ -595,7 +639,7 @@ function Inbox() {
           <div className="flex items-center gap-1">
             {CHANNEL_FILTERS.map((f) => {
               const isActive = activeChannel === f.key
-              const count = f.key ? (chats.filter(c => c.channels.has(f.key!)).length) : totalChats
+              const count = f.key ? ((tab === 'spam' ? spamChats : allChats).filter(c => c.channels.has(f.key!)).length) : totalChats
               const Icon = f.icon
               return (
                 <button
@@ -619,10 +663,11 @@ function Inbox() {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => { setFolderEditMode('create'); setFolderEditOpen(true) }}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-50 border border-dashed border-gray-300"
-              title="Добавить папку"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 border border-dashed border-gray-300"
+              title="Создать папку"
             >
               <Plus className="w-3.5 h-3.5" />
+              Создать папку
             </button>
             <button
               onClick={() => { setFolderEditMode('manage'); setFolderEditOpen(true) }}
@@ -639,6 +684,8 @@ function Inbox() {
             const isActive = tab === t.key
             const count = t.key === 'favorites' ? favoriteCount
               : t.key === 'new' ? newChatCount
+              : t.key === 'other' ? otherCount
+              : t.key === 'channels' ? channelsCount
               : t.key === 'spam' ? spamCount
               : null
             const Icon = t.icon
@@ -705,15 +752,42 @@ function Inbox() {
             >
               Все
             </button>
-            {SPHERES_WITH_FOLDERS.includes(tab as ContactSphere) && (folderId === null || channelFolderIds.has(folderId)) && (
-              <button
-                onClick={handleLoadChannels}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Загрузить каналы
-              </button>
+            {tab === 'channels' && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleLoadChannels}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Загрузить новые
+                </button>
+                <button
+                  onClick={handleShowLoadedChannels}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  Показать загруженные
+                </button>
+              </div>
             )}
+          </div>
+        )}
+
+        {tab === 'spam' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleLoadSpam}
+              disabled={spamLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${spamLoading ? 'animate-spin' : ''}`} />
+              {spamLoading ? 'Загрузка...' : 'Загрузить новые'}
+            </button>
+            <button
+              onClick={handleShowLoadedSpam}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              Показать загруженные
+            </button>
           </div>
         )}
 
@@ -753,9 +827,46 @@ function Inbox() {
                  activeFolder ? `Нет диалогов в папке "${folders.find(f => f.id === activeFolder)?.name}"` :
                  showOnlyNew ? 'Нет новых диалогов' :
                  showFavorites ? 'Нет избранных диалогов' :
+                 tab === 'channels' ? 'Диалоги из каналов не загружены' :
+                 tab === 'spam' ? 'Спам-диалоги не загружены' :
                  activeSphere ? 'Нет диалогов в этом разделе' :
                  'Нет сообщений'}
               </p>
+              {tab === 'channels' && (
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <button
+                    onClick={handleLoadChannels}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Загрузить новые
+                  </button>
+                  <button
+                    onClick={handleShowLoadedChannels}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    Показать загруженные
+                  </button>
+                </div>
+              )}
+              {tab === 'spam' && (
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <button
+                    onClick={handleLoadSpam}
+                    disabled={spamLoading}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${spamLoading ? 'animate-spin' : ''}`} />
+                    {spamLoading ? 'Загрузка...' : 'Загрузить новые'}
+                  </button>
+                  <button
+                    onClick={handleShowLoadedSpam}
+                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    Показать загруженные
+                  </button>
+                </div>
+              )}
             </div>
           </Card>
         ) : (
@@ -797,12 +908,6 @@ function Inbox() {
           onMessageUpdate={(msg) => setSelectedMessage(msg)}
         />
       )}
-
-      <SpamFeedDialog
-        open={spamDialogOpen}
-        onClose={() => setSpamDialogOpen(false)}
-        type="spam"
-      />
 
       <FolderEditDialog
         open={folderEditOpen}

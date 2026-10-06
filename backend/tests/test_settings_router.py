@@ -163,3 +163,70 @@ async def test_onboarding_complete_encrypts_email_password(tmp_path, monkeypatch
     config = fake_channel_service.create.await_args.kwargs["config"]
     assert config["password"] != "supersecret"
     assert decrypt(config["password"]) == "supersecret"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_complete_proxy_mode(tmp_path, monkeypatch):
+    from app.routers import settings as settings_router
+
+    enc_file = tmp_path / "onboarding.enc"
+    monkeypatch.setattr(settings_router, "get_user_onboarding_file", lambda _login: enc_file)
+    monkeypatch.setattr(settings_router, "ensure_user_data_dir", lambda _login: None)
+    monkeypatch.setattr(settings_router, "set_active_login", lambda _login: None)
+    monkeypatch.setattr(settings_router, "set_poll_service", lambda _ps: None)
+    monkeypatch.setattr("app.deps.get_poll_service", lambda: None)
+    monkeypatch.setattr(settings_router, "init_db", AsyncMock())
+
+    fake_session = AsyncMock()
+    fake_session.run_sync = AsyncMock()
+
+    session_maker = MagicMock()
+    session_maker.return_value.__aenter__ = AsyncMock(return_value=fake_session)
+    session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(settings_router, "get_async_session_maker", lambda _login=None: session_maker)
+
+    fake_user_repo = MagicMock()
+    fake_user_repo.get_by_id = AsyncMock(return_value=None)
+    monkeypatch.setattr("app.repositories.user.UserRepository", lambda _session: fake_user_repo)
+
+    fake_settings_service = MagicMock()
+    fake_settings_service.set = AsyncMock()
+    monkeypatch.setattr(settings_router, "SettingsService", lambda *a, **k: fake_settings_service)
+
+    fake_channel_service = MagicMock()
+    fake_channel_service.create = AsyncMock(return_value=MagicMock(id=1))
+    fake_channel_service.restore_channels = AsyncMock()
+    monkeypatch.setattr(settings_router, "ChannelService", lambda *a, **k: fake_channel_service)
+    monkeypatch.setattr(settings_router, "PollService", lambda **k: MagicMock())
+
+    def saved_proxy_config():
+        calls = [
+            c.args[1]
+            for c in fake_settings_service.set.await_args_list
+            if c.args and c.args[0] == "proxy_config"
+        ]
+        return calls[-1] if calls else {}
+
+    # system_vpn → прокси выключен
+    await settings_router.onboarding_complete(
+        settings_router.OnboardingComplete(
+            login="testuser",
+            proxy=settings_router.ProxyConfig(mode="system_vpn"),
+        )
+    )
+    cfg = saved_proxy_config()
+    assert cfg["mode"] == "system_vpn"
+    assert cfg["enabled"] is False
+
+    # custom_proxy с host/port → прокси включён
+    await settings_router.onboarding_complete(
+        settings_router.OnboardingComplete(
+            login="testuser2",
+            proxy=settings_router.ProxyConfig(
+                mode="custom_proxy", type="socks5", host="127.0.0.1", port=1080
+            ),
+        )
+    )
+    cfg = saved_proxy_config()
+    assert cfg["mode"] == "custom_proxy"
+    assert cfg["enabled"] is True

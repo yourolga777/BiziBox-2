@@ -1,15 +1,21 @@
 import { openDB, type IDBPDatabase } from 'idb'
 
 const DB_NAME = 'bizibox-offline'
-const DB_VERSION = 6
+const DB_VERSION = 8
 const MUTATIONS_STORE = 'mutations'
 const MESSAGES_STORE = 'messages'
 const CONTACTS_STORE = 'contacts'
 const TASKS_STORE = 'tasks'
+const ORDERS_STORE = 'orders'
+const PRODUCTS_STORE = 'products'
+const SUPPLIERS_STORE = 'suppliers'
 const DRAFTS_STORE = 'drafts'
 const MAX_MESSAGES = 500
 const MAX_CONTACTS = 500
 const MAX_TASKS = 200
+const MAX_ORDERS = 200
+const MAX_PRODUCTS = 200
+const MAX_SUPPLIERS = 200
 
 export interface DraftAttachment {
   name: string
@@ -86,6 +92,15 @@ function getDb(): Promise<IDBPDatabase> {
         }
         if (!db.objectStoreNames.contains(TASKS_STORE)) {
           db.createObjectStore(TASKS_STORE, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(ORDERS_STORE)) {
+          db.createObjectStore(ORDERS_STORE, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(PRODUCTS_STORE)) {
+          db.createObjectStore(PRODUCTS_STORE, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(SUPPLIERS_STORE)) {
+          db.createObjectStore(SUPPLIERS_STORE, { keyPath: 'id' })
         }
         if (!db.objectStoreNames.contains(DRAFTS_STORE)) {
           db.createObjectStore(DRAFTS_STORE, { keyPath: 'contactId' })
@@ -405,12 +420,58 @@ export async function getTaskFromCache(id: number): Promise<unknown> {
   return db.get(TASKS_STORE, id)
 }
 
+/* === Orders === */
+
+export async function saveOrders(orders: unknown[]): Promise<void> {
+  return saveWithPrune(ORDERS_STORE, orders, MAX_ORDERS)
+}
+
+export async function getOrdersFromCache(): Promise<unknown[]> {
+  const db = await getDb()
+  return db.getAll(ORDERS_STORE)
+}
+
+export async function getOrderFromCache(id: number): Promise<unknown> {
+  const db = await getDb()
+  return db.get(ORDERS_STORE, id)
+}
+
+/* === Products === */
+
+export async function saveProducts(products: unknown[]): Promise<void> {
+  return saveWithPrune(PRODUCTS_STORE, products, MAX_PRODUCTS)
+}
+
+export async function getProductsFromCache(): Promise<unknown[]> {
+  const db = await getDb()
+  return db.getAll(PRODUCTS_STORE)
+}
+
+export async function getProductFromCache(id: number): Promise<unknown> {
+  const db = await getDb()
+  return db.get(PRODUCTS_STORE, id)
+}
+
+/* === Suppliers === */
+
+export async function saveSuppliers(suppliers: unknown[]): Promise<void> {
+  return saveWithPrune(SUPPLIERS_STORE, suppliers, MAX_SUPPLIERS)
+}
+
+export async function getSuppliersFromCache(): Promise<unknown[]> {
+  const db = await getDb()
+  return db.getAll(SUPPLIERS_STORE)
+}
+
 /* === Generic store helpers === */
 
 const SAVE_FNS: Record<string, (entities: unknown[]) => Promise<void>> = {
   messages: saveMessages,
   contacts: saveContacts,
   tasks: saveTasks,
+  orders: saveOrders,
+  products: saveProducts,
+  suppliers: saveSuppliers,
 }
 
 export function saveToStore(store: string, entity: unknown): Promise<void> {

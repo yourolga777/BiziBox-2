@@ -47,4 +47,10 @@ describe('Inbox page', () => {
 
     expect(await screen.findByText('Нет сообщений')).toBeInTheDocument();
   });
+
+  it('показывает вкладку «Другое» для неклассифицированных контактов', async () => {
+    render(<Inbox />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText('Другое')).toBeInTheDocument();
+  });
 });

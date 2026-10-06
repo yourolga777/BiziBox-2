@@ -130,6 +130,7 @@ class ProxyConfig(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     secret: Optional[str] = None
+    mode: Optional[str] = None  # direct | system_vpn | custom_proxy
 
 
 class OnboardingComplete(BaseModel):
@@ -254,7 +255,9 @@ async def onboarding_complete(data: OnboardingComplete) -> dict[str, Any]:
         if data.proxy:
             px = data.proxy
             proxy_data = px.model_dump(exclude_none=True)
-            proxy_data["enabled"] = bool(px.host and px.port)
+            mode = px.mode or ("custom_proxy" if (px.host and px.port) else "direct")
+            proxy_data["mode"] = mode
+            proxy_data["enabled"] = mode == "custom_proxy" and bool(px.host and px.port)
             await service.set("proxy_config", proxy_data)
 
         await service.set("onboarded", True)

@@ -11,6 +11,7 @@ export const contactApi = {
     if (params?.contact_type_ids?.length) search.set('contact_type_ids', params.contact_type_ids.join(','))
     if (params?.folder_id !== undefined && params.folder_id !== null) search.set('folder_id', String(params.folder_id))
     if (params?.is_favorite !== undefined) search.set('is_favorite', String(params.is_favorite))
+    if (params?.unclassified) search.set('unclassified', 'true')
     if (params?.sort_by) search.set('sort_by', params.sort_by)
     if (params?.sort_order) search.set('sort_order', params.sort_order)
     if (params?.skip !== undefined) search.set('skip', String(params.skip))
@@ -90,6 +91,12 @@ export const contactApi = {
 
   deleteFolder: (id: number) =>
     request<void>(`/folders/${id}`, { method: 'DELETE', _entityId: id }),
+
+  reorderFolders: (ids: number[]) =>
+    request<ContactFolder[]>('/folders/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
 
   bulkUpdate: (data: BulkUpdateRequest) =>
     request<{ updated: number }>('/contacts/bulk-update', { method: 'PATCH', body: JSON.stringify(data) }),

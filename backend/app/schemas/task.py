@@ -35,6 +35,7 @@ class TaskDetailResponse(BaseModel):
     id: int
     contact_id: Optional[int] = None
     contact_name: Optional[str] = None
+    message_id: Optional[int] = None
     title: str
     description: Optional[str] = None
     status: str
@@ -61,6 +62,7 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     contact_id: Optional[int] = None
+    message_id: Optional[int] = None
     due_date: Optional[datetime] = None
     status: str = Field(default="new", pattern=TASK_STATUS_PATTERN)
     reminder_minutes: Optional[int] = Field(None, ge=0)
@@ -84,6 +86,7 @@ class TaskUpdate(BaseModel):
 class TaskResponse(BaseModel):
     id: int
     contact_id: Optional[int] = None
+    message_id: Optional[int] = None
     title: str
     description: Optional[str] = None
     status: str

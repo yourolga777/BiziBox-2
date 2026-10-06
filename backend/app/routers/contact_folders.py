@@ -10,6 +10,7 @@ from ..schemas.contact_folder import (
     ContactFolderCreate,
     ContactFolderResponse,
     ContactFolderUpdate,
+    FolderReorderRequest,
 )
 from ..services.folder_service import FolderService
 
@@ -23,6 +24,16 @@ async def get_folders(
 ) -> list[ContactFolderResponse]:
     service = FolderService(session, owner_id=int(current_user.id))
     return await service.get_all()
+
+
+@router.post("/reorder", response_model=List[ContactFolderResponse])
+async def reorder_folders(
+    data: FolderReorderRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: UserModel = Depends(get_current_user),
+) -> list[ContactFolderResponse]:
+    service = FolderService(session, owner_id=int(current_user.id))
+    return await service.reorder(data.ids)
 
 
 @router.post("/", response_model=ContactFolderResponse, status_code=201)

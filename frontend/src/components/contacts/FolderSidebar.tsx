@@ -1,30 +1,31 @@
 import { useState } from 'react'
-import { Folder, Plus, Star, Tag, ChevronRight, Trash2 } from 'lucide-react'
+import { Folder, Plus, Star, Tag, ChevronRight, CircleDashed } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import Card from '../common/Card'
 import { contactApi } from '../../api/client'
 import { useFoldersQuery, useCreateFolderMutation } from '../../hooks/queries'
 import { useToast } from '../common/Toast'
+import FolderTree from '../common/FolderTree'
+import FolderEditModal from '../common/FolderEditModal'
 import { CONTACT_SPHERE_META } from '../../types/contactType'
-import type { ContactSphere } from '../../types/contact'
+import type { ContactFolder, ContactSphere } from '../../types/contact'
 
 export type ContactFilter =
   | { kind: 'all' }
   | { kind: 'favorites' }
+  | { kind: 'other' }
   | { kind: 'sphere'; sphere: ContactSphere }
   | { kind: 'folder'; folderId: number }
 
-const SPHERE_ORDER: ContactSphere[] = ['personal', 'work', 'spam']
+const SPHERE_ORDER: ContactSphere[] = ['work', 'personal', 'channels', 'spam']
 
 export default function FolderSidebar({
   selected,
   onSelect,
-  contactId,
   onDropContact,
 }: {
   selected: ContactFilter
   onSelect: (filter: ContactFilter) => void
-  contactId: number | null
   onDropContact: (contactId: number, folderId: number | null) => void
 }) {
   const { data: folders = [] } = useFoldersQuery()
@@ -35,11 +36,10 @@ export default function FolderSidebar({
   const [newName, setNewName] = useState('')
   const [newSphere, setNewSphere] = useState<ContactSphere>('personal')
   const [newParent, setNewParent] = useState<number | null>(null)
+  const [editingFolder, setEditingFolder] = useState<ContactFolder | null>(null)
 
-  const topLevel = folders.filter(f => !f.parent_id)
-  const subfoldersOf = (id: number) => folders.filter(f => f.parent_id === id)
   const foldersOfSphere = (sphere: ContactSphere) =>
-    topLevel.filter(f => (f.sphere || 'personal') === sphere)
+    folders.filter(f => (f.sphere || 'personal') === sphere)
 
   const parentCandidates = folders.filter(
     f => (f.sphere || 'personal') === newSphere,
@@ -57,15 +57,16 @@ export default function FolderSidebar({
     setIsAdding(false)
   }
 
-  const handleDragOver = (e: React.DragEvent, _folderId: number | null) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+  const handleDropContact = (draggedContactId: number, folderId: number) => {
+    onDropContact(draggedContactId, folderId)
   }
 
-  const handleDrop = (e: React.DragEvent, folderId: number | null) => {
-    e.preventDefault()
-    if (contactId) {
-      onDropContact(contactId, folderId)
+  const handleReorder = async (ids: number[]) => {
+    try {
+      await contactApi.reorderFolders(ids)
+      queryClient.invalidateQueries({ queryKey: ['folders'] })
+    } catch {
+      showToast('Не удалось изменить порядок', 'error')
     }
   }
 
@@ -84,6 +85,11 @@ export default function FolderSidebar({
   const isSphereSelected = (s: ContactSphere) =>
     selected.kind === 'sphere' && selected.sphere === s
 
+  const folderIsInSphere = (s: ContactSphere) =>
+    selected.kind === 'folder' && folders.some(f => (f.sphere || 'personal') === s && f.id === selected.folderId)
+
+  const isSphereActive = (s: ContactSphere) => isSphereSelected(s) || folderIsInSphere(s)
+
   return (
     <div className="w-60 shrink-0">
       <Card>
@@ -92,10 +98,10 @@ export default function FolderSidebar({
             <h3 className="text-sm font-semibold text-gray-700">Контакты</h3>
             <button
               onClick={() => setIsAdding(true)}
-              className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-              title="Создать папку"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
+              Создать папку
             </button>
           </div>
 
@@ -119,10 +125,20 @@ export default function FolderSidebar({
             Избранное
           </button>
 
+          <button
+            onClick={() => onSelect({ kind: 'other' })}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              selected.kind === 'other' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <CircleDashed className="w-4 h-4" />
+            Другое
+          </button>
+
           <div className="pt-1 mt-1 border-t border-gray-100">
             {SPHERE_ORDER.map(s => {
               const sphereFolders = foldersOfSphere(s)
-              const showFolders = s === 'personal' || s === 'work'
+              const showFolders = s === 'personal' || s === 'work' || s === 'channels'
               return (
                 <div key={s}>
                   <button
@@ -134,23 +150,20 @@ export default function FolderSidebar({
                     <Tag className="w-4 h-4" />
                     <span className="flex-1 text-left">{CONTACT_SPHERE_META[s].label}</span>
                     {showFolders && (
-                      <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isSphereSelected(s) ? 'rotate-90' : ''}`} />
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isSphereActive(s) ? 'rotate-90' : ''}`} />
                     )}
                   </button>
-                  {showFolders && isSphereSelected(s) && (
+                  {showFolders && isSphereActive(s) && (
                     <div className="ml-4 pl-2 border-l border-gray-200">
-                      {sphereFolders.map(folder => (
-                        <FolderRow
-                          key={folder.id}
-                          folder={folder}
-                          subfolders={subfoldersOf(folder.id)}
-                          selected={selected}
-                          onSelect={onSelect}
-                          onDragOver={handleDragOver}
-                          onDrop={handleDrop}
-                          onDelete={handleDeleteFolder}
-                        />
-                      ))}
+                      <FolderTree
+                        folders={sphereFolders}
+                        selectedFolderId={selected.kind === 'folder' ? selected.folderId : null}
+                        onSelect={folderId => onSelect({ kind: 'folder', folderId })}
+                        onEdit={setEditingFolder}
+                        onDelete={handleDeleteFolder}
+                        onDropContact={handleDropContact}
+                        onReorder={handleReorder}
+                      />
                     </div>
                   )}
                 </div>
@@ -172,7 +185,7 @@ export default function FolderSidebar({
                 onChange={e => { setNewSphere(e.target.value as ContactSphere); setNewParent(null) }}
                 className="w-full px-2 py-1 text-sm border rounded"
               >
-                {(['personal', 'work'] as ContactSphere[]).map(s => (
+                {(['personal', 'work', 'channels'] as ContactSphere[]).map(s => (
                   <option key={s} value={s}>{CONTACT_SPHERE_META[s].label}</option>
                 ))}
               </select>
@@ -207,63 +220,8 @@ export default function FolderSidebar({
           )}
         </div>
       </Card>
-    </div>
-  )
-}
-
-function FolderRow({
-  folder,
-  subfolders,
-  selected,
-  onSelect,
-  onDragOver,
-  onDrop,
-  onDelete,
-}: {
-  folder: { id: number; name: string; color: string | null }
-  subfolders: { id: number; name: string; color: string | null }[]
-  selected: ContactFilter
-  onSelect: (filter: ContactFilter) => void
-  onDragOver: (e: React.DragEvent, folderId: number | null) => void
-  onDrop: (e: React.DragEvent, folderId: number | null) => void
-  onDelete: (folder: { id: number; name: string }) => void
-}) {
-  const isSelected = selected.kind === 'folder' && selected.folderId === folder.id
-  return (
-    <div className="group">
-      <button
-        onClick={() => onSelect({ kind: 'folder', folderId: folder.id })}
-        onDragOver={e => onDragOver(e, folder.id)}
-        onDrop={e => onDrop(e, folder.id)}
-        className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-          isSelected ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'
-        }`}
-      >
-        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: folder.color || '#d1d5db' }} />
-        <span className="truncate flex-1">{folder.name}</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(folder) }}
-          className="p-0.5 rounded text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 transition-opacity shrink-0"
-          title="Удалить папку"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </button>
-      {subfolders.length > 0 && (
-        <div className="ml-4 pl-2 border-l border-gray-200">
-          {subfolders.map(sf => (
-            <button
-              key={sf.id}
-              onClick={() => onSelect({ kind: 'folder', folderId: sf.id })}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                selected.kind === 'folder' && selected.folderId === sf.id ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sf.color || '#d1d5db' }} />
-              <span className="truncate">{sf.name}</span>
-            </button>
-          ))}
-        </div>
+      {editingFolder && (
+        <FolderEditModal folder={editingFolder} onClose={() => setEditingFolder(null)} />
       )}
     </div>
   )

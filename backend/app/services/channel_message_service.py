@@ -11,7 +11,6 @@ from ..channels.base import BaseChannelAdapter
 from ..config import settings
 from ..paths import get_data_dir
 from ..repositories.contact import ContactRepository
-from ..repositories.contact_folder import ContactFolderRepository
 from ..repositories.message import MessageRepository
 from ..schemas.message import AttachmentInput, MessageCreate, MessageResponse
 from ..services.message_service import MessageService
@@ -141,19 +140,7 @@ class ChannelMessageService:
         return await self.message_service.create(message_data)
 
     async def _is_channel_contact(self, contact: Any) -> bool:
-        if getattr(contact, "folder_id", None) is None:
-            return False
-        folder_repo = ContactFolderRepository(self.session, self.owner_id)
-        folder = await folder_repo.get_by_id(int(contact.folder_id))
-        seen: set[int] = set()
-        while folder is not None and folder.id not in seen:
-            if folder.category_key == "channels":
-                return True
-            seen.add(folder.id)
-            if folder.parent_id is None:
-                break
-            folder = await folder_repo.get_by_id(int(folder.parent_id))
-        return False
+        return getattr(contact, "life_sphere", None) == "channels"
 
     @staticmethod
     def _email_reply_subject(subject: Optional[str]) -> Optional[str]:
@@ -168,6 +155,7 @@ class ChannelMessageService:
         message_id: int,
         content: str,
         client_request_id: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> Optional[MessageResponse]:
         original = await self.message_repo.get_by_id(message_id)
         if not original:
@@ -190,15 +178,14 @@ class ChannelMessageService:
         if not adapter:
             raise HTTPException(503, f"Канал {original.channel} не подключён")
 
-        channel_id: str | None = None
         contact = await self.contact_repo.get_by_id(int(original.contact_id))
-        if original.channel == "telegram":
-            channel_id = str(contact.telegram_id) if contact and contact.telegram_id else None
-        elif original.channel == "email":
-            channel_id = str(contact.email) if contact and contact.email else None
-        if not channel_id:
-            msg = f"Не удалось определить контакт (msg {message_id})"
-            raise HTTPException(400, msg)
+        channel_id = await self._resolve_channel_id(
+            contact,
+            str(original.channel),
+            recipient,
+            adapter,
+            error_detail=f"Не удалось определить контакт (msg {message_id})",
+        )
 
         reply_to: Optional[str] = (
             str(original.channel_message_id) if original.channel_message_id else None
@@ -257,6 +244,7 @@ class ChannelMessageService:
         files: list[UploadFile],
         content: str = "",
         client_request_id: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> Optional[MessageResponse]:
         original = await self.message_repo.get_by_id(message_id)
         if not original:
@@ -280,13 +268,13 @@ class ChannelMessageService:
             raise HTTPException(503, f"Канал {original.channel} не подключён")
 
         contact = await self.contact_repo.get_by_id(int(original.contact_id))
-        channel_id: str | None = None
-        if original.channel == "telegram":
-            channel_id = str(contact.telegram_id) if contact and contact.telegram_id else None
-        elif original.channel == "email":
-            channel_id = str(contact.email) if contact and contact.email else None
-        if not channel_id:
-            raise HTTPException(400, f"Не удалось определить контакт (msg {message_id})")
+        channel_id = await self._resolve_channel_id(
+            contact,
+            str(original.channel),
+            recipient,
+            adapter,
+            error_detail=f"Не удалось определить контакт (msg {message_id})",
+        )
 
         attachments_dir = get_data_dir() / "attachments"
         attachments_dir.mkdir(parents=True, exist_ok=True)
@@ -384,7 +372,29 @@ class ChannelMessageService:
             raise HTTPException(503, f"Канал {channel} не подключён")
         return adapter
 
-    async def _resolve_channel_id(self, contact: Any, channel: str) -> str:
+    async def _resolve_channel_id(
+        self,
+        contact: Any,
+        channel: str,
+        recipient: Optional[str] = None,
+        adapter: Any = None,
+        error_detail: str = "Не удалось определить адрес контакта",
+    ) -> str:
+        if recipient and recipient.strip():
+            value = recipient.strip()
+            if channel == "telegram" and not value.isdigit():
+                if adapter is None:
+                    raise HTTPException(400, error_detail)
+                try:
+                    resolved = await adapter.resolve_channel_id(value)
+                except HTTPException:
+                    raise
+                except Exception:
+                    raise HTTPException(400, error_detail)
+                if not resolved:
+                    raise HTTPException(400, error_detail)
+                return str(resolved)
+            return value
         if channel == "telegram":
             channel_id = str(contact.telegram_id) if contact and contact.telegram_id else None
         elif channel == "email":
@@ -392,7 +402,7 @@ class ChannelMessageService:
         else:
             channel_id = None
         if not channel_id:
-            raise HTTPException(400, "Не удалось определить адрес контакта")
+            raise HTTPException(400, error_detail)
         return channel_id
 
     async def send_message(
@@ -401,6 +411,7 @@ class ChannelMessageService:
         channel: str,
         content: str,
         client_request_id: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> Optional[MessageResponse]:
         outbox = OutboxService(self.session, owner_id=self.owner_id)
         if client_request_id:
@@ -414,7 +425,7 @@ class ChannelMessageService:
         contact = await self.contact_repo.get_by_id(contact_id)
         if not contact:
             raise HTTPException(404, "Контакт не найден")
-        channel_id = await self._resolve_channel_id(contact, channel)
+        channel_id = await self._resolve_channel_id(contact, channel, recipient, adapter)
 
         reply_data = MessageCreate(
             contact_id=contact_id,
@@ -463,6 +474,7 @@ class ChannelMessageService:
         files: list[UploadFile],
         content: str = "",
         client_request_id: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> Optional[MessageResponse]:
         outbox = OutboxService(self.session, owner_id=self.owner_id)
         if client_request_id:
@@ -476,7 +488,7 @@ class ChannelMessageService:
         contact = await self.contact_repo.get_by_id(contact_id)
         if not contact:
             raise HTTPException(404, "Контакт не найден")
-        channel_id = await self._resolve_channel_id(contact, channel)
+        channel_id = await self._resolve_channel_id(contact, channel, recipient, adapter)
 
         attachments_dir = get_data_dir() / "attachments"
         attachments_dir.mkdir(parents=True, exist_ok=True)

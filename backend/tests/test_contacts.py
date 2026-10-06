@@ -159,6 +159,143 @@ async def test_merge_contacts():
 
 
 @pytest.mark.asyncio
+async def test_merge_keeps_conflicting_identifiers_separately():
+    async with make_client() as client:
+        c1 = await client.post("/api/contacts/", json={
+            "name": "Same Name",
+            "phone": "+111",
+            "email": "primary@example.com",
+        })
+        c2 = await client.post("/api/contacts/", json={
+            "name": "Same Name",
+            "phone": "+222",
+            "email": "secondary@example.com",
+        })
+        pid = c1.json()["id"]
+        sid = c2.json()["id"]
+
+        response = await client.post("/api/contacts/merge", json={
+            "primary_id": pid,
+            "secondary_id": sid,
+        })
+        assert response.status_code == 200
+        data = response.json()
+
+        ident = {(i["channel"], i["value"]) for i in data["identifiers"]}
+        assert ("phone", "+222") in ident
+        assert ("email", "secondary@example.com") in ident
+
+        # Основные поля не перезаписаны
+        assert data["phone"] == "+111"
+        assert data["email"] == "primary@example.com"
+
+        # Идентификаторы больше не сваливаются в заметки
+        assert "Объединённые данные" not in (data.get("notes") or "")
+
+        # Повторное объединение не дублирует идентификаторы
+        c3 = await client.post("/api/contacts/", json={
+            "name": "Same Name",
+            "phone": "+222",
+            "email": "secondary@example.com",
+        })
+        again = await client.post("/api/contacts/merge", json={
+            "primary_id": pid,
+            "secondary_id": c3.json()["id"],
+        })
+        assert again.status_code == 200
+        ident2 = [(i["channel"], i["value"]) for i in again.json()["identifiers"]]
+        assert ident2.count(("phone", "+222")) == 1
+
+
+@pytest.mark.asyncio
+async def test_merge_concatenates_names():
+    async with make_client() as client:
+        c1 = await client.post("/api/contacts/", json={"name": "Иван", "telegram_id": "111"})
+        c2 = await client.post("/api/contacts/", json={"name": "Петров", "telegram_id": "222"})
+        pid = c1.json()["id"]
+        sid = c2.json()["id"]
+
+        response = await client.post("/api/contacts/merge", json={
+            "primary_id": pid,
+            "secondary_id": sid,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Иван Петров"
+        assert ("telegram_id", "222") in {(i["channel"], i["value"]) for i in data["identifiers"]}
+
+
+@pytest.mark.asyncio
+async def test_get_all_returns_identifiers():
+    async with make_client() as client:
+        c1 = await client.post("/api/contacts/", json={"name": "A", "telegram_id": "111"})
+        c2 = await client.post("/api/contacts/", json={"name": "B", "telegram_id": "222"})
+        pid = c1.json()["id"]
+        sid = c2.json()["id"]
+        await client.post("/api/contacts/merge", json={"primary_id": pid, "secondary_id": sid})
+
+        lst = await client.get("/api/contacts/")
+        contacts = lst.json()
+        merged = next(c for c in contacts if c["id"] == pid)
+        assert ("telegram_id", "222") in {(i["channel"], i["value"]) for i in merged["identifiers"]}
+
+
+@pytest.mark.asyncio
+async def test_update_folder_ids_applies_auto_type_and_spheres():
+    async with make_client() as client:
+        c = await client.post("/api/contacts/", json={"name": "Иван"})
+        cid = c.json()["id"]
+        folders = (await client.get("/api/folders/")).json()
+        suppliers = next(f for f in folders if f["category_key"] == "suppliers")
+
+        response = await client.patch(f"/api/contacts/{cid}", json={"folder_ids": [suppliers["id"]]})
+        assert response.status_code == 200
+        data = response.json()
+
+        assert suppliers["id"] in [f["id"] for f in data["folders"]]
+        assert "Поставщик" in data["contact_types"]
+        assert "work" in data["spheres"]
+
+
+@pytest.mark.asyncio
+async def test_folder_suppliers_creates_supplier():
+    async with make_client() as client:
+        c = await client.post("/api/contacts/", json={"name": "ООО Ромашка"})
+        cid = c.json()["id"]
+        folders = (await client.get("/api/folders/")).json()
+        suppliers_folder = next(f for f in folders if f["category_key"] == "suppliers")
+
+        await client.patch(f"/api/contacts/{cid}", json={"folder_ids": [suppliers_folder["id"]]})
+
+        suppliers = (await client.get("/api/suppliers/")).json()
+        assert any(s["contact_id"] == cid for s in suppliers)
+
+
+@pytest.mark.asyncio
+async def test_reset_classification_moves_contact_to_other():
+    async with make_client() as client:
+        created = await client.post("/api/contacts/", json={
+            "name": "To Reset",
+            "life_sphere": "work",
+        })
+        assert created.status_code == 201
+        cid = created.json()["id"]
+
+        folders = await client.get("/api/folders/?sphere=work")
+        folder_id = folders.json()[0]["id"]
+        await client.patch(f"/api/contacts/{cid}", json={"folder_id": folder_id})
+        assert (await client.get(f"/api/contacts/{cid}")).json()["folder_id"] == folder_id
+
+        resp = await client.patch(
+            f"/api/contacts/{cid}", json={"life_sphere": None, "folder_id": None}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["life_sphere"] is None
+        assert data["folder_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_contact_pagination():
     async with make_client() as client:
         for i in range(25):

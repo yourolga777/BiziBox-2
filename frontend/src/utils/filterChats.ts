@@ -5,12 +5,14 @@ export function filterChats(chats: ChatItem[], filters: ChatFilters): ChatItem[]
 
   if (filters.lifeSphere === 'spam') {
     result = result.filter((c) => c.contact.life_sphere === 'spam')
+  } else if (filters.lifeSphere === 'channels') {
+    result = result.filter((c) => c.contact.life_sphere === 'channels')
   } else if (filters.lifeSphere) {
-    result = result.filter(
-      (c) => c.contact.life_sphere !== 'spam' && c.contact.life_sphere === filters.lifeSphere,
-    )
+    result = result.filter((c) => c.contact.life_sphere === filters.lifeSphere)
   } else {
-    result = result.filter((c) => c.contact.life_sphere !== 'spam')
+    result = result.filter(
+      (c) => c.contact.life_sphere !== 'spam' && c.contact.life_sphere !== 'channels',
+    )
   }
 
   if (filters.channel) {

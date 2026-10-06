@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { CheckCircle, Clock, Copy, CalendarPlus } from 'lucide-react'
+import { CheckCircle, Clock, Copy, CalendarPlus, PackagePlus } from 'lucide-react'
 import { messageApi } from '../../api/client'
 import { useToast } from '../common/Toast'
+import { useContactsQuery } from '../../hooks/queries'
+import { useCreateOrderMutation } from '../../hooks/orders'
 import TaskForm from './TaskForm'
+import QuickOrderModal from './QuickOrderModal'
 import { CalendarModal } from '../calendar/CalendarModal'
 import type { Message } from '../../types/message'
 
@@ -23,7 +26,10 @@ function MessageActions({ message, contactName, isAnonymous, onActionComplete }:
   const [expanded, setExpanded] = useState(false)
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const [eventModalOpen, setEventModalOpen] = useState(false)
+  const [orderModalOpen, setOrderModalOpen] = useState(false)
   const { showToast } = useToast()
+  const contactsQuery = useContactsQuery()
+  const createOrder = useCreateOrderMutation()
 
   const handleSnooze = async (hours: number) => {
     const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
@@ -80,6 +86,15 @@ function MessageActions({ message, contactName, isAnonymous, onActionComplete }:
 
         <button
           type="button"
+          onClick={() => setOrderModalOpen(true)}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+        >
+          <PackagePlus className="w-3.5 h-3.5" />
+          + Заказ
+        </button>
+
+        <button
+          type="button"
           onClick={() => setEventModalOpen(true)}
           className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
         >
@@ -130,6 +145,7 @@ function MessageActions({ message, contactName, isAnonymous, onActionComplete }:
           contactName={contactName}
           initialTitle={contactName ?? undefined}
           initialDescription={message.content}
+          messageId={message.id}
           onTaskCreated={onActionComplete}
           onClose={() => setExpanded(false)}
         />
@@ -142,6 +158,23 @@ function MessageActions({ message, contactName, isAnonymous, onActionComplete }:
         initialContactId={message.contact_id}
         onCreated={() => {
           setEventModalOpen(false)
+          onActionComplete()
+        }}
+      />
+
+      <QuickOrderModal
+        open={orderModalOpen}
+        onClose={() => setOrderModalOpen(false)}
+        messageId={message.id}
+        contactId={message.contact_id}
+        contactName={contactName}
+        contacts={contactsQuery.data ?? []}
+        onCreate={async (data) => {
+          await createOrder.mutateAsync(data)
+        }}
+        onCreated={() => {
+          setOrderModalOpen(false)
+          showToast('Заказ создан', 'success')
           onActionComplete()
         }}
       />

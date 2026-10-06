@@ -11,13 +11,16 @@ class ContactFolderRepository(BaseRepository[ContactFolderModel]):
     def __init__(self, session: AsyncSession, owner_id: Optional[int] = None):
         super().__init__(ContactFolderModel, session, owner_id)
 
-    async def get_all(self, skip: int = 0, limit: int = 100) -> List[ContactFolderModel]:
+    async def get_all(
+        self, skip: int = 0, limit: Optional[int] = 100
+    ) -> List[ContactFolderModel]:
         query = self._scoped(
-            select(self.model)
-            .order_by(self.model.sort_order, self.model.name)
-            .offset(skip)
-            .limit(limit)
+            select(self.model).order_by(self.model.sort_order, self.model.name)
         )
+        if skip:
+            query = query.offset(skip)
+        if limit is not None:
+            query = query.limit(limit)
         result = await self.session.execute(query)
         return list(result.scalars().all())
 

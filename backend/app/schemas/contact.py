@@ -3,7 +3,7 @@ from typing import Annotated, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-ContactSphere = Literal["personal", "work", "spam"]
+ContactSphere = Literal["personal", "work", "channels", "spam"]
 
 
 class ContactCreate(BaseModel):
@@ -19,6 +19,7 @@ class ContactCreate(BaseModel):
     is_known: Optional[bool] = None
     is_favorite: Optional[bool] = None
     folder_id: Optional[int] = None
+    folder_ids: Optional[List[int]] = None
 
 
 class ContactUpdate(BaseModel):
@@ -34,7 +35,25 @@ class ContactUpdate(BaseModel):
     contact_type_ids: Optional[List[int]] = None
     birthday: Optional[date] = None
     folder_id: Optional[int] = None
+    folder_ids: Optional[List[int]] = None
     notes: Optional[str] = None
+
+
+class ContactIdentifierResponse(BaseModel):
+    channel: str
+    value: str
+
+    model_config = {"from_attributes": True}
+
+
+class ContactFolderRef(BaseModel):
+    id: int
+    name: str
+    color: Optional[str] = None
+    sphere: Optional[str] = None
+    parent_id: Optional[int] = None
+
+    model_config = {"from_attributes": True}
 
 
 class ContactResponse(BaseModel):
@@ -60,6 +79,9 @@ class ContactResponse(BaseModel):
     deleted_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    identifiers: List[ContactIdentifierResponse] = []
+    spheres: List[str] = []
+    folders: List[ContactFolderRef] = []
 
     model_config = {"from_attributes": True}
 

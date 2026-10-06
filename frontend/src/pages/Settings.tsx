@@ -4,7 +4,8 @@ import { useToast } from '../components/common/Toast'
 import { settingsApi } from '../api/settings'
 import { initTheme, storeTheme } from '../utils/theme'
 import { getNotificationPermission, isPushSupported, requestNotificationPermission, subscribeToPush } from '../notifications/push'
-import type { Settings } from '../types/settings'
+import NetworkModeSelector, { type ProxyFields } from '../components/common/NetworkModeSelector'
+import type { NetworkMode, Settings } from '../types/settings'
 
 function Settings() {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -17,12 +18,8 @@ function Settings() {
   const [enablingNotifs, setEnablingNotifs] = useState(false)
   const [telegramInterval, setTelegramInterval] = useState<number | null>(null)
   const [emailInterval, setEmailInterval] = useState<number | null>(null)
-  const [proxyMode, setProxyMode] = useState<'none' | 'socks5' | 'http' | 'mtproto'>('none')
-  const [proxyHost, setProxyHost] = useState('')
-  const [proxyPort, setProxyPort] = useState('')
-  const [proxyUser, setProxyUser] = useState('')
-  const [proxyPass, setProxyPass] = useState('')
-  const [proxySecret, setProxySecret] = useState('')
+  const [proxyMode, setProxyMode] = useState<NetworkMode>('direct')
+  const [proxyFields, setProxyFields] = useState<ProxyFields>({ type: 'socks5', host: '', port: '', username: '', password: '', secret: '' })
   const [savingProxy, setSavingProxy] = useState(false)
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -36,17 +33,22 @@ function Settings() {
       const px = data.proxy_config
       if (px && typeof px === 'object') {
         const p = px as Record<string, unknown>
-        const pType = String(p.type ?? 'socks5')
-        setProxyMode(
-          p.enabled && p.host && p.port
-            ? pType === 'mtproto' ? 'mtproto' : pType === 'http' ? 'http' : 'socks5'
-            : 'none',
-        )
-        setProxyHost(p.host ? String(p.host) : '')
-        setProxyPort(p.port ? String(p.port) : '')
-        setProxyUser(p.username ? String(p.username) : '')
-        setProxyPass('')
-        setProxySecret('')
+        const rawMode = String(p.mode ?? '')
+        const mode: NetworkMode =
+          rawMode === 'system_vpn' || rawMode === 'custom_proxy'
+            ? rawMode
+            : p.enabled && p.host && p.port
+              ? 'custom_proxy'
+              : 'direct'
+        setProxyMode(mode)
+        setProxyFields({
+          type: String(p.type ?? 'socks5'),
+          host: p.host ? String(p.host) : '',
+          port: p.port ? String(p.port) : '',
+          username: p.username ? String(p.username) : '',
+          password: '',
+          secret: '',
+        })
       }
       setLoading(false)
     }).catch(() => {
@@ -80,21 +82,22 @@ function Settings() {
   }
 
   async function saveProxy() {
-    if (proxyMode !== 'none' && (!proxyHost.trim() || !proxyPort.trim())) {
+    if (proxyMode === 'custom_proxy' && (!proxyFields.host.trim() || !proxyFields.port.trim())) {
       showToast('Укажите хост и порт прокси', 'error')
       return
     }
     setSavingProxy(true)
     try {
       const proxyConfig: Record<string, unknown> = {
-        enabled: proxyMode !== 'none',
-        type: proxyMode === 'none' ? 'socks5' : proxyMode,
-        host: proxyMode === 'none' ? '' : proxyHost.trim(),
-        port: proxyMode === 'none' ? null : Number(proxyPort),
-        username: proxyUser.trim() || null,
+        mode: proxyMode,
+        enabled: proxyMode === 'custom_proxy',
+        type: proxyFields.type,
+        host: proxyMode === 'custom_proxy' ? proxyFields.host.trim() : '',
+        port: proxyMode === 'custom_proxy' ? Number(proxyFields.port) : null,
+        username: proxyFields.username.trim() || null,
       }
-      if (proxyPass) proxyConfig.password = proxyPass
-      if (proxySecret) proxyConfig.secret = proxySecret
+      if (proxyFields.password) proxyConfig.password = proxyFields.password
+      if (proxyFields.secret) proxyConfig.secret = proxyFields.secret
       const updated = await settingsApi.update({ values: { proxy_config: proxyConfig } })
       setSettings(updated as Settings)
       showToast('Настройки прокси сохранены', 'success')
@@ -234,98 +237,12 @@ function Settings() {
       <Card>
         <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">VPN / Прокси</h3>
         <div className="space-y-4">
-          <div>
-            <label htmlFor="proxy-mode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Способ подключения Telegram
-            </label>
-            <select
-              id="proxy-mode"
-              value={proxyMode}
-              onChange={(e) => setProxyMode(e.target.value as typeof proxyMode)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-            >
-              <option value="none">Без прокси (прямое подключение / системный VPN)</option>
-              <option value="socks5">SOCKS5-прокси</option>
-              <option value="http">HTTP-прокси</option>
-              <option value="mtproto">MTProto-прокси</option>
-            </select>
-          </div>
-          {proxyMode !== 'none' && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="proxy-host" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Хост</label>
-                  <input
-                    id="proxy-host"
-                    type="text"
-                    value={proxyHost}
-                    onChange={(e) => setProxyHost(e.target.value)}
-                    placeholder="127.0.0.1"
-                    autoComplete="off"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="proxy-port" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Порт</label>
-                  <input
-                    id="proxy-port"
-                    type="number"
-                    value={proxyPort}
-                    onChange={(e) => setProxyPort(e.target.value)}
-                    placeholder="10808"
-                    autoComplete="off"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                  />
-                </div>
-              </div>
-              {proxyMode === 'mtproto' ? (
-                <div>
-                  <label htmlFor="proxy-secret" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Secret</label>
-                  <input
-                    id="proxy-secret"
-                    type="text"
-                    value={proxySecret}
-                    onChange={(e) => setProxySecret(e.target.value)}
-                    placeholder="Секретный ключ MTProto-прокси"
-                    autoComplete="off"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="proxy-user" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Логин</label>
-                    <input
-                      id="proxy-user"
-                      type="text"
-                      value={proxyUser}
-                      onChange={(e) => setProxyUser(e.target.value)}
-                      placeholder="(опционально)"
-                      autoComplete="off"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="proxy-pass" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Пароль</label>
-                    <input
-                      id="proxy-pass"
-                      type="password"
-                      value={proxyPass}
-                      onChange={(e) => setProxyPass(e.target.value)}
-                      placeholder="(не менять)"
-                      autoComplete="new-password"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-                    />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Укажите <b>локальный</b> адрес вашего VPN-приложения (v2rayN/Xray/Clash/Happ),
-            обычно <span className="font-mono">127.0.0.1:порт</span>, а не IP сервера.
-            Если VPN работает на уровне системы — выберите «Без прокси».
-          </p>
+          <NetworkModeSelector
+            mode={proxyMode}
+            fields={proxyFields}
+            onModeChange={setProxyMode}
+            onFieldsChange={(field, value) => setProxyFields(prev => ({ ...prev, [field]: value }))}
+          />
           <button
             onClick={saveProxy}
             disabled={savingProxy}

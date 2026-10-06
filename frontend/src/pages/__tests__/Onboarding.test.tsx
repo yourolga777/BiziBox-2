@@ -19,7 +19,7 @@ const SAVED_DATA = {
   login: 'alice',
   telegram: { api_id: '', api_hash: '', phone: '', password_2fa: '', useCustomApi: false },
   email: { email: '', password: '', imap_host: '', smtp_host: '', imap_port: 993, smtp_port: 465 },
-  proxy: { type: 'socks5', host: '', port: '', username: '', password: '', secret: '', useCustomProxy: false },
+  proxy: { mode: 'direct', type: 'socks5', host: '', port: '', username: '', password: '', secret: '' },
 };
 
 function renderOnFinishStep(onComplete: () => void) {

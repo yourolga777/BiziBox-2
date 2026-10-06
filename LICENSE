@@ -1,21 +1,21 @@
-MIT License
+BiziBox — проприетарное программное обеспечение (Proprietary Software)
 
-Copyright (c) 2026 BiziBox
+Copyright (c) 2026 BiziBox. Все права защищены (All Rights Reserved).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+BiziBox является проприетарным программным обеспечением. Любое
+использование, копирование, изменение, распространение, публикация,
+сублицензирование или создание производных работ на основе исходного
+кода или собранных исполняемых файлов BiziBox запрещено без
+предварительного письменного разрешения правообладателя.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Исходный код размещён в этом репозитории исключительно для
+ознакомления. Он не является открытым исходным кодом в смысле лицензий
+MIT, Apache 2.0, GPL и им подобных.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ПРОГРАММНОЕ ОБЕСПЕЧЕНИЕ ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ», БЕЗ КАКИХ-ЛИБО
+ГАРАНТИЙ, ЯВНЫХ ИЛИ ПОДРАЗУМЕВАЕМЫХ, ВКЛЮЧАЯ, НО НЕ ОГРАНИЧИВАЯСЬ
+ГАРАНТИЯМИ КОММЕРЧЕСКОЙ ПРИГОДНОСТИ, ПРИГОДНОСТИ ДЛЯ КОНКРЕТНОЙ ЦЕЛИ
+И НЕНАРУШЕНИЯ ПРАВ. НИ В КОЕМ СЛУЧАЕ ПРАВООБЛАДАТЕЛЬ НЕ НЕСЁТ
+ОТВЕТСТВЕННОСТИ ЗА ЛЮБЫЕ ПРЕТЕНЗИИ, УБЫТКИ ИЛИ ИНЫЕ ТРЕБОВАНИЯ,
+ПРЯМО ИЛИ КОСВЕННО ВОЗНИКШИЕ ИЗ-ЗА ИСПОЛЬЗОВАНИЯ ЭТОГО ПРОГРАММНОГО
+ОБЕСПЕЧЕНИЯ.

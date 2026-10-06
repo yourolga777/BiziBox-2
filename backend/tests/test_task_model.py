@@ -51,7 +51,7 @@ async def test_task_response_has_no_removed_fields():
     assert created.status_code == 201
     body = created.json()
     assert "executor_id" not in body
-    assert "message_id" not in body
+    assert body.get("message_id") is None
     assert "is_auto_generated" not in body
 
 
@@ -64,6 +64,6 @@ async def test_task_detail_has_no_removed_fields():
     assert detail.status_code == 200
     body = detail.json()
     assert "executor_id" not in body
-    assert "message_id" not in body
+    assert body.get("message_id") is None
     assert "is_auto_generated" not in body
     assert "message_content" not in body

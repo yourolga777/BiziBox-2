@@ -8,7 +8,7 @@ export const contactSchema = z.object({
   notes: z.string().max(2000, 'Максимум 2000 символов').optional().or(z.literal('')),
   is_known: z.boolean().optional(),
   is_favorite: z.boolean().optional(),
-  life_sphere: z.enum(['personal', 'work', 'spam']).optional().or(z.literal('')),
+  life_sphere: z.enum(['personal', 'work', 'channels', 'spam']).optional().or(z.literal('')),
   birthday: z
     .string()
     .refine(
@@ -17,7 +17,7 @@ export const contactSchema = z.object({
     )
     .optional()
     .or(z.literal('')),
-  folder_id: z.union([z.number().int().positive(), z.literal('')]),
+  folder_ids: z.array(z.number().int().positive()).optional(),
 })
 
 export type ContactFormData = z.infer<typeof contactSchema>

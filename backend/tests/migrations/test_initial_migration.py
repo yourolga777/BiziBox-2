@@ -26,7 +26,7 @@ def test_initial_migration_seeds_owner_and_folders(db_url: str, sync_url: str) -
     engine.dispose()
 
     assert owner == "owner"
-    assert sorted(folders) == ["channels", "family", "friends", "groups", "service"]
+    assert sorted(folders) == ["customers", "employees", "family", "friends", "groups", "service", "study", "suppliers"]
 
 
 def test_initial_migration_seed_idempotent(db_url: str, sync_url: str) -> None:
@@ -43,7 +43,7 @@ def test_initial_migration_seed_idempotent(db_url: str, sync_url: str) -> None:
         ).scalar_one()
     engine.dispose()
 
-    assert folder_count == 5
+    assert folder_count == 8
     assert owner_count == 1
 
 

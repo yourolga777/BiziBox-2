@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Index, Integer, String, Table, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func, text
 
@@ -10,10 +10,33 @@ from ..database import Base
 
 if TYPE_CHECKING:
     from .contact_folder import ContactFolderModel
+    from .contact_identifier import ContactIdentifierModel
     from .contact_note import ContactNoteModel
+    from .contact_sphere import ContactSphereModel
     from .contact_type_template import ContactTypeTemplateModel
     from .message import MessageModel
+    from .order import OrderModel
+    from .supplier import SupplierModel
     from .task import TaskModel
+
+
+contact_folder_association = Table(
+    "contact_folder_association",
+    Base.metadata,
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "folder_id",
+        Integer,
+        ForeignKey("contact_folders.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("owner_id", Integer, ForeignKey("users.id"), nullable=False, server_default="1"),
+)
 
 
 class ContactModel(Base):
@@ -67,10 +90,29 @@ class ContactModel(Base):
         back_populates="contact",
         foreign_keys="TaskModel.contact_id",
     )
+    orders: Mapped[List["OrderModel"]] = relationship(
+        "OrderModel",
+        back_populates="contact",
+        foreign_keys="OrderModel.contact_id",
+    )
     note_entries: Mapped[List["ContactNoteModel"]] = relationship(
         "ContactNoteModel", back_populates="contact", cascade="all, delete-orphan"
     )
+    identifiers: Mapped[List["ContactIdentifierModel"]] = relationship(
+        "ContactIdentifierModel", back_populates="contact", cascade="all, delete-orphan"
+    )
     folder: Mapped["ContactFolderModel"] = relationship("ContactFolderModel", backref="contacts")
+    folders: Mapped[List["ContactFolderModel"]] = relationship(
+        "ContactFolderModel",
+        secondary="contact_folder_association",
+        backref="contacts_multi",
+    )
+    spheres: Mapped[List["ContactSphereModel"]] = relationship(
+        "ContactSphereModel", back_populates="contact", cascade="all, delete-orphan"
+    )
+    supplier: Mapped[Optional["SupplierModel"]] = relationship(
+        "SupplierModel", back_populates="contact", uselist=False
+    )
     contact_types: Mapped[List["ContactTypeTemplateModel"]] = relationship(
         "ContactTypeTemplateModel",
         secondary="contact_contact_type_association",

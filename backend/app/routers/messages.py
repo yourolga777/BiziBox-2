@@ -234,60 +234,40 @@ async def _get_channel_contacts(
     owner_id: int,
     folder_id: Optional[int] = None,
 ) -> list[ContactModel]:
-    folders = (
-        await session.execute(
-            select(ContactFolderModel).where(ContactFolderModel.owner_id == owner_id)
-        )
-    ).scalars().all()
-    by_id = {f.id: f for f in folders}
-
-    def _is_channel(fid: Optional[int]) -> bool:
-        seen: set[int] = set()
-        while fid is not None and fid not in seen:
-            f = by_id.get(fid)
-            if f is None:
-                return False
-            if f.category_key == "channels":
-                return True
-            seen.add(fid)
-            fid = f.parent_id
-        return False
-
-    channel_folder_ids = {f.id for f in folders if _is_channel(f.id)}
-    if folder_id is not None:
-        allowed = {folder_id}
-        for f in folders:
-            if _is_descendant(f.id, folder_id, by_id):
-                allowed.add(f.id)
-        channel_folder_ids = channel_folder_ids & allowed
-
-    if not channel_folder_ids:
-        return []
-
-    result = await session.execute(
-        select(ContactModel).where(
-            ContactModel.folder_id.in_(channel_folder_ids),
-            ContactModel.deleted_at.is_(None),
-            ContactModel.owner_id == owner_id,
-        )
+    query = select(ContactModel).where(
+        ContactModel.life_sphere == "channels",
+        ContactModel.deleted_at.is_(None),
+        ContactModel.owner_id == owner_id,
     )
+    if folder_id is not None:
+        folder_ids = await _folder_descendants(session, owner_id, folder_id)
+        query = query.where(ContactModel.folder_id.in_(folder_ids))
+    result = await session.execute(query)
     return list(result.scalars().all())
 
 
-def _is_descendant(
-    folder_id: int, root_id: int, by_id: dict[int, ContactFolderModel]
-) -> bool:
-    seen: set[int] = set()
-    cur: Optional[int] = folder_id
-    while cur is not None and cur not in seen:
-        if cur == root_id:
-            return True
-        seen.add(cur)
-        parent = by_id.get(cur)
-        if parent is None:
-            return False
-        cur = parent.parent_id
-    return False
+async def _folder_descendants(
+    session: AsyncSession, owner_id: int, folder_id: int
+) -> list[int]:
+    rows = (
+        await session.execute(
+            select(ContactFolderModel.id, ContactFolderModel.parent_id).where(
+                ContactFolderModel.owner_id == owner_id
+            )
+        )
+    ).all()
+    children: dict[Optional[int], list[int]] = {}
+    for fid, pid in rows:
+        children.setdefault(pid, []).append(int(fid))
+    result: list[int] = []
+    stack = [folder_id]
+    while stack:
+        cur = stack.pop()
+        if cur in result:
+            continue
+        result.append(cur)
+        stack.extend(children.get(cur, []))
+    return result
 
 
 @router.get("/archive", response_model=List[MessageResponse])
@@ -587,6 +567,7 @@ async def send_reply(
         message_id=data.message_id,
         content=data.content,
         client_request_id=data.client_request_id,
+        recipient=data.recipient,
     )
     if not reply:
         raise HTTPException(status_code=404, detail="Original message not found")
@@ -599,6 +580,7 @@ async def send_file_reply(
     content: str = Form(""),
     files: list[UploadFile] = File(...),
     client_request_id: Optional[str] = Form(None),
+    recipient: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_session),
     current_user: UserModel = Depends(get_current_user),
 ) -> MessageResponse:
@@ -608,6 +590,7 @@ async def send_file_reply(
         content=content,
         files=files,
         client_request_id=client_request_id,
+        recipient=recipient,
     )
     if not reply:
         raise HTTPException(status_code=404, detail="Original message not found")
@@ -626,6 +609,7 @@ async def send_message(
         channel=data.channel,
         content=data.content,
         client_request_id=data.client_request_id,
+        recipient=data.recipient,
     )
     if not reply:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -639,6 +623,7 @@ async def send_file_message(
     content: str = Form(""),
     files: list[UploadFile] = File(...),
     client_request_id: Optional[str] = Form(None),
+    recipient: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_session),
     current_user: UserModel = Depends(get_current_user),
 ) -> MessageResponse:
@@ -649,6 +634,7 @@ async def send_file_message(
         content=content,
         files=files,
         client_request_id=client_request_id,
+        recipient=recipient,
     )
     if not reply:
         raise HTTPException(status_code=404, detail="Contact not found")

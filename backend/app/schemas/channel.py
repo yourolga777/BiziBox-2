@@ -58,6 +58,7 @@ class ChannelResponse(BaseModel):
 class ChannelSendReply(BaseModel):
     message_id: int = Field(..., gt=0)
     content: str = Field(..., min_length=1)
+    recipient: Optional[str] = Field(None, max_length=255)
     client_request_id: Optional[str] = Field(None, max_length=64)
 
 
@@ -65,6 +66,7 @@ class ChannelSendMessage(BaseModel):
     contact_id: int = Field(..., gt=0)
     channel: str = Field(..., pattern=r"^(telegram|email)$")
     content: str = Field(..., min_length=1)
+    recipient: Optional[str] = Field(None, max_length=255)
     client_request_id: Optional[str] = Field(None, max_length=64)
 
 

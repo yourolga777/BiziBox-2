@@ -1,13 +1,13 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { GitMerge, Search } from 'lucide-react'
+import { GitMerge, Search, ChevronRight, CircleDashed, Tag, Check } from 'lucide-react'
 import { contactSchema, type ContactFormData } from '../../schemas'
 import { contactApi } from '../../api/client'
 import { useFoldersQuery } from '../../hooks/queries'
 import { displayName } from '../../utils/contactDisplayName'
 import { CONTACT_SPHERES, CONTACT_SPHERE_META } from '../../types/contactType'
-import type { Contact, ContactSphere } from '../../types/contact'
+import type { Contact, ContactFolder, ContactSphere } from '../../types/contact'
 
 function toNullableString(v: unknown): string | undefined {
   if (v === null || v === undefined || v === '') return undefined
@@ -19,7 +19,7 @@ function toNullableNumber(v: unknown): number | null {
   return Number(v)
 }
 
-const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work']
+const SPHERES_WITH_FOLDERS: ContactSphere[] = ['personal', 'work', 'channels']
 
 export default function ContactForm({
   initial,
@@ -38,7 +38,7 @@ export default function ContactForm({
   const [mergeResults, setMergeResults] = useState<Contact[]>([])
   const [merging, setMerging] = useState(false)
 
-  const { register, handleSubmit: withValidation, setError, control, formState: { errors, isSubmitting, isDirty } } = useForm<ContactFormData>({
+  const { register, handleSubmit: withValidation, setError, setValue, control, formState: { errors, isSubmitting, isDirty } } = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
       name: initial?.name || '',
@@ -49,18 +49,47 @@ export default function ContactForm({
       is_favorite: initial?.is_favorite ?? false,
       life_sphere: (initial?.life_sphere || '') as ContactSphere | '',
       birthday: initial?.birthday ?? '',
-      folder_id: initial?.folder_id ?? '',
+      folder_ids: initial?.folders?.map(f => f.id) ?? [],
     },
   })
 
   const selectedSphere = useWatch({ control, name: 'life_sphere' }) as ContactSphere | ''
   const effectiveSphere: ContactSphere | '' = selectedSphere || ''
 
-  const foldersOfSphere = folders.filter(
-    (f) => effectiveSphere !== '' && (f.sphere || 'personal') === effectiveSphere,
+  const [expandedSphere, setExpandedSphere] = useState<ContactSphere | null>(
+    initial?.life_sphere && SPHERES_WITH_FOLDERS.includes(initial.life_sphere) ? initial.life_sphere : null,
   )
-  const topLevelFolders = foldersOfSphere.filter((f) => !f.parent_id)
-  const subfoldersOf = (parentId: number) => foldersOfSphere.filter((f) => f.parent_id === parentId)
+  const selectedFolderIds = useWatch({ control, name: 'folder_ids' }) as number[] | undefined
+  const activeFolderIds = selectedFolderIds ?? []
+  const childrenOf = (parentId: number | null) =>
+    folders.filter(f => (f.parent_id ?? null) === parentId)
+
+  const renderFolderTree = (folder: ContactFolder, depth: number) => {
+    const children = childrenOf(folder.id)
+    const active = activeFolderIds.includes(folder.id)
+    return (
+      <div key={folder.id}>
+        <button
+          type="button"
+          onClick={() => {
+            const next = active
+              ? activeFolderIds.filter(id => id !== folder.id)
+              : [...activeFolderIds, folder.id]
+            setValue('folder_ids', next)
+          }}
+          className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors ${
+            active ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+          }`}
+          style={{ paddingLeft: 8 + depth * 14 }}
+        >
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: folder.color || '#6b7280' }} />
+          <span className="flex-1 text-left truncate">{folder.name}</span>
+          {active && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+        </button>
+        {children.map(c => renderFolderTree(c, depth + 1))}
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (!isDirty) return
@@ -142,38 +171,61 @@ export default function ContactForm({
       </div>
 
       <div>
-        <label htmlFor="contact-life-sphere" className="block text-sm font-medium text-gray-700 mb-1">Сфера</label>
-        <select id="contact-life-sphere" {...register('life_sphere')} className="w-full px-3 py-2 border rounded-lg">
-          <option value="">Другое</option>
-          {CONTACT_SPHERES.map(s => (
-            <option key={s} value={s}>{CONTACT_SPHERE_META[s].label}</option>
-          ))}
-        </select>
+        <p className="block text-sm font-medium text-gray-700 mb-1">Классификация</p>
+        <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-60 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => { setValue('life_sphere', ''); setValue('folder_ids', []) }}
+            className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors ${
+              effectiveSphere === '' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <CircleDashed className="w-4 h-4 text-gray-400" />
+            Другое (без сферы)
+          </button>
+          {CONTACT_SPHERES.map(s => {
+            const showFolders = SPHERES_WITH_FOLDERS.includes(s)
+            const expanded = expandedSphere === s
+            const isActive = effectiveSphere === s && activeFolderIds.length === 0
+            return (
+              <div key={s}>
+                <button
+                  type="button"
+                    onClick={() => {
+                      setValue('life_sphere', s)
+                      setValue('folder_ids', [])
+                      if (showFolders) setExpandedSphere(expanded ? null : s)
+                    }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors ${
+                    isActive ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                  <Tag className="w-4 h-4 text-gray-400" />
+                  <span className="flex-1 text-left">{CONTACT_SPHERE_META[s].label}</span>
+                </button>
+                {showFolders && expanded && (
+                  <div className="ml-3 pl-2 border-l border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => { setValue('life_sphere', s); setValue('folder_ids', []) }}
+                      className={`w-full text-left px-2 py-1.5 text-sm rounded-lg transition-colors ${
+                        isActive ? 'text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      Без папки
+                    </button>
+                    {childrenOf(null)
+                      .filter(f => (f.sphere || 'personal') === s)
+                      .map(f => renderFolderTree(f, 0))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
         {errors.life_sphere && <p className="text-xs text-red-500 mt-1">{errors.life_sphere.message}</p>}
-      </div>
-
-      <div>
-        <label htmlFor="contact-folder" className="block text-sm font-medium text-gray-700 mb-1">Папка</label>
-        <select
-          id="contact-folder"
-          {...register('folder_id', { setValueAs: (v) => v === '' ? '' : Number(v) })}
-          disabled={!effectiveSphere || !SPHERES_WITH_FOLDERS.includes(effectiveSphere)}
-          className="w-full px-3 py-2 border rounded-lg disabled:opacity-50 disabled:bg-gray-50"
-        >
-          <option value="">Без папки</option>
-          {topLevelFolders.map(f => (
-            <Fragment key={f.id}>
-              <option value={f.id}>{f.name}</option>
-              {subfoldersOf(f.id).map(sf => (
-                <option key={sf.id} value={sf.id}>&nbsp;&nbsp;&nbsp;&nbsp;↳ {sf.name}</option>
-              ))}
-            </Fragment>
-          ))}
-        </select>
-        {effectiveSphere && !SPHERES_WITH_FOLDERS.includes(effectiveSphere) && (
-          <p className="text-xs text-gray-400 mt-1">Для сферы «{CONTACT_SPHERE_META[effectiveSphere].label}» папки недоступны</p>
-        )}
-        {errors.folder_id && <p className="text-xs text-red-500 mt-1">{errors.folder_id.message}</p>}
+        {errors.folder_ids && <p className="text-xs text-red-500 mt-1">{errors.folder_ids.message}</p>}
       </div>
 
       <div>

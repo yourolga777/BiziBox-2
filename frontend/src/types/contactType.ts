@@ -1,15 +1,18 @@
 import type { ContactSphere } from './contact'
 
 export const CONTACT_SPHERES: ContactSphere[] = [
-  'personal',
   'work',
+  'personal',
+  'channels',
   'spam',
 ]
 
-export const CONTACT_SPHERE_META: Record<ContactSphere, { label: string; color: string; bg: string }> = {
-  personal: { label: 'Личное', color: 'text-green-700', bg: 'bg-green-100' },
+export const CONTACT_SPHERE_META: Record<ContactSphere | 'other', { label: string; color: string; bg: string }> = {
   work: { label: 'Работа', color: 'text-blue-700', bg: 'bg-blue-100' },
+  personal: { label: 'Личное', color: 'text-green-700', bg: 'bg-green-100' },
+  channels: { label: 'Каналы', color: 'text-cyan-700', bg: 'bg-cyan-100' },
   spam: { label: 'Спам', color: 'text-gray-600', bg: 'bg-gray-100' },
+  other: { label: 'Другое', color: 'text-gray-500', bg: 'bg-gray-50' },
 }
 
 export const CONTACT_SPHERE_FILTERS: { key: ContactSphere | ''; label: string }[] = [

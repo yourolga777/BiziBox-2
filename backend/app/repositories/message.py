@@ -136,6 +136,22 @@ class MessageRepository(BaseRepository[MessageModel]):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_by_contacts(self, contact_ids: List[int], limit: int = 200) -> List[MessageModel]:
+        if not contact_ids:
+            return []
+        query = self._scoped(
+            select(self.model)
+            .where(
+                self.model.contact_id.in_(contact_ids),
+                self.model.deleted_at.is_(None),
+            )
+            .order_by(self.model.created_at.desc())
+            .limit(limit)
+            .options(selectinload(self.model.attachments), selectinload(self.model.contact))
+        )
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
     async def get_by_channel(self, channel: str) -> List[MessageModel]:
         return await self.get_all(channel=channel)
 

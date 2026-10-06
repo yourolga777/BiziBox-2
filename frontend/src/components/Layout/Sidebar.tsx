@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Archive, CalendarIcon, LayoutDashboard, Inbox, ListTodo, LogOut, Radio, Users, Settings, HelpCircle, Sparkles } from 'lucide-react'
+import { Archive, CalendarIcon, LayoutDashboard, Inbox, ListTodo, LogOut, Package, ShoppingCart, Radio, Users, Settings, HelpCircle, Sparkles } from 'lucide-react'
 import { useMetrics } from '../../hooks/useMetrics'
 import { settingsApi } from '../../api/settings'
 import { setStoredLogin, clearLocalOnboarded } from '../../api/client'
@@ -17,6 +17,8 @@ const navItems = [
   { to: '/contacts', icon: Users, label: 'Контакты', tooltip: 'Управление контактами' },
   { to: '/calendar', icon: CalendarIcon, label: 'Календарь', tooltip: 'Календарь задач' },
   { to: '/tasks', icon: ListTodo, label: 'Задачи', tooltip: 'Список задач и дел' },
+  { to: '/orders', icon: Package, label: 'Заказы', tooltip: 'Заказы и позиции' },
+  { to: '/products', icon: ShoppingCart, label: 'Каталог', tooltip: 'Товары и поставщики' },
   { to: '/channels', icon: Radio, label: 'Каналы', tooltip: 'Подключение Telegram, Email' },
   { to: '/archive', icon: Archive, label: 'Архив', tooltip: 'Удалённые контакты, сообщения, задачи' },
   { to: '/ai', icon: Sparkles, label: 'AI-ассистент', tooltip: 'AI-функции (скоро)' },

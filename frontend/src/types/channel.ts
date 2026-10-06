@@ -81,10 +81,12 @@ export interface EmailConnectRequest {
 export interface SendReplyRequest {
   message_id: number
   content: string
+  recipient?: string
 }
 
 export interface SendMessageRequest {
   contact_id: number
   channel: string
   content: string
+  recipient?: string
 }

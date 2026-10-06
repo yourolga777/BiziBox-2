@@ -1,6 +1,7 @@
 ﻿from datetime import datetime
 from typing import List, Optional
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -13,6 +14,7 @@ from ..repositories.message import MessageRepository
 from ..schemas.message import MessageCreate, MessageResponse, MessageUpdate, ThreadResponse
 from ..utils.autolink import autolink
 from ..utils.fts import index_message, reindex_message, search_message_ids
+from ..utils.search import like_predicate, search_variants
 from .otp import extract_otp
 
 
@@ -143,12 +145,33 @@ class MessageService:
         return await self._load_with_contact(message) if message else None
 
     async def search(self, q: str, limit: int = 200) -> List[MessageResponse]:
-        ids = await search_message_ids(
-            self.session, q, self.owner_id or DEFAULT_OWNER_ID, limit
+        owner_id = self.owner_id or DEFAULT_OWNER_ID
+        variants = search_variants(q)
+
+        content_ids: set[int] = set()
+        for variant in variants:
+            ids = await search_message_ids(self.session, variant, owner_id, limit)
+            content_ids.update(ids)
+
+        # Поиск по имени контакта (только имя, с транслитерацией Barinov ↔ Баринов).
+        name_ids: set[int] = set()
+        name_predicates = [like_predicate(ContactModel.name, v) for v in variants]
+        query = select(ContactModel).where(
+            or_(*name_predicates), ContactModel.deleted_at.is_(None)
         )
-        if not ids:
+        if self.owner_id is not None:
+            query = query.where(ContactModel.owner_id == self.owner_id)
+        result = await self.session.execute(query.limit(100))
+        contacts = list(result.scalars().all())
+        if contacts:
+            cids = [int(c.id) for c in contacts if c.id is not None]
+            msgs = await self.message_repo.get_by_contacts(cids, limit)
+            name_ids = {int(m.id) for m in msgs}
+
+        all_ids = sorted(content_ids | name_ids, reverse=True)[:limit]
+        if not all_ids:
             return []
-        messages = await self.message_repo.get_by_ids(ids)
+        messages = await self.message_repo.get_by_ids(all_ids)
         return [await self._load_with_contact(m) for m in messages]
 
     async def create(self, data: MessageCreate) -> MessageResponse:

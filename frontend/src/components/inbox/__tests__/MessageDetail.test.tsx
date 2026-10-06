@@ -12,7 +12,11 @@ vi.mock('../../contacts/ContactDetailPanel', () => ({
   default: ({ onEdit }: { onEdit: () => void }) => <button onClick={onEdit}>Открыть форму</button>,
 }));
 vi.mock('../ThreadList', () => ({ ThreadList: ({ messages }: { messages: unknown[] }) => <div data-testid="thread-count">{messages.length}</div> }));
-vi.mock('../ReplyBar', () => ({ default: () => null }));
+vi.mock('../ReplyBar', () => ({
+  default: ({ recipientOptions }: { recipientOptions?: { value: string; label: string }[] }) => (
+    <div data-testid="recipient-options" data-count={String(recipientOptions?.length ?? 0)} />
+  ),
+}));
 vi.mock('../MessageActions', () => ({ default: () => null }));
 vi.mock('../NewContactBanner', () => ({ default: () => null }));
 vi.mock('../ContactSearchPopup', () => ({ default: () => null }));
@@ -382,5 +386,53 @@ describe('MessageDetail — оффлайн переписка из кэша', ()
     );
 
     await waitFor(() => expect(screen.getByTestId('thread-count')).toHaveTextContent('1'));
+  });
+});
+
+
+describe('MessageDetail — выбор получателя', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    server.resetHandlers();
+    server.use(
+      http.get('/api/folders', () => HttpResponse.json([])),
+      http.get('/api/templates', () => HttpResponse.json([])),
+      http.get('/api/messages/dialog/1', () => HttpResponse.json([])),
+      http.post('/api/messages/sync-dialog/1', () => HttpResponse.json({ new_messages: 0 })),
+      http.post('/api/messages/reclassify-by-contact/1', () => HttpResponse.json({ updated: 0 })),
+    );
+  });
+
+  it('строит опции получателя из полей контакта и identifiers', async () => {
+    const contact = {
+      ...makeContact('Контакт'),
+      telegram_id: '12345',
+      identifiers: [
+        { channel: 'telegram_username', value: '@second' },
+        { channel: 'telegram_id', value: '777000' },
+      ],
+    };
+    server.use(http.get('/api/contacts/1', () => HttpResponse.json(contact)));
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MessageDetail message={makeMessage()} contactName={null} onClose={vi.fn()} onReplied={vi.fn()} />,
+      { wrapper: createWrapper(qc) },
+    );
+
+    await waitFor(() => expect(screen.getByTestId('recipient-options')).toHaveAttribute('data-count', '3'));
+  });
+
+  it('без альтернативных адресов — только один получатель (negative)', async () => {
+    const contact = { ...makeContact('Контакт'), telegram_id: '12345' };
+    server.use(http.get('/api/contacts/1', () => HttpResponse.json(contact)));
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MessageDetail message={makeMessage()} contactName={null} onClose={vi.fn()} onReplied={vi.fn()} />,
+      { wrapper: createWrapper(qc) },
+    );
+
+    await waitFor(() => expect(screen.getByTestId('recipient-options')).toHaveAttribute('data-count', '1'));
   });
 });

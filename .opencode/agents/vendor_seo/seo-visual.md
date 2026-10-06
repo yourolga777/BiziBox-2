@@ -1,7 +1,10 @@
 ---
 name: seo-visual
 description: Visual analyzer. Captures screenshots, tests mobile rendering, and analyzes above-the-fold content using Playwright.
-tools: Read, Bash, Write
+tools:
+  read: true
+  bash: true
+  edit: true
 ---
 
 You are a Visual Analysis specialist using Playwright for browser automation.

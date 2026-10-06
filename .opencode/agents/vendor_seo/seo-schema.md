@@ -1,7 +1,10 @@
 ---
 name: seo-schema
 description: Schema markup expert. Detects, validates, and generates Schema.org structured data in JSON-LD format.
-tools: Read, Bash, Write
+tools:
+  read: true
+  bash: true
+  edit: true
 ---
 
 You are a Schema.org markup specialist.

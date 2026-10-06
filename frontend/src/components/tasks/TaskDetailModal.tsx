@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { CalendarIcon, CheckCircle2, Circle, Clock, Plus, Trash2, User, X } from 'lucide-react'
 import Modal from '../common/Modal'
 import Button from '../common/Button'
+import MessagePreview from '../common/MessagePreview'
 import ContactCombobox from '../contacts/ContactCombobox'
 import { TASK_STATUS_LABELS, type TaskStatus } from '../../types/task'
 import type { TaskDetail, TaskComment } from '../../types/task'
@@ -165,6 +166,10 @@ function TaskDetailModal({ open, onClose, task, contacts, onAddComment, onDelete
           <div>
             <p className="text-sm text-gray-600">{task.description}</p>
           </div>
+        )}
+
+        {task.message_id != null && (
+          <MessagePreview messageId={task.message_id} className="text-xs text-gray-500 italic line-clamp-3" />
         )}
 
         <div className="grid grid-cols-2 gap-4">

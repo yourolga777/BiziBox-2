@@ -203,12 +203,14 @@ export async function sendFileReply(
   content: string,
   files: File[],
   contactId: number,
+  recipient?: string | null,
 ): Promise<Message> {
   const clientRequestId = newClientRequestId()
   const formFields = {
     message_id: String(messageId),
     content,
     client_request_id: clientRequestId,
+    ...(recipient ? { recipient } : {}),
   }
 
   const createPending = async (): Promise<Message> => {
@@ -319,6 +321,7 @@ export async function sendFileMessage(
   channel: string,
   content: string,
   files: File[],
+  recipient?: string | null,
 ): Promise<Message> {
   const clientRequestId = newClientRequestId()
   const formFields = {
@@ -326,6 +329,7 @@ export async function sendFileMessage(
     channel,
     content,
     client_request_id: clientRequestId,
+    ...(recipient ? { recipient } : {}),
   }
 
   const createPending = async (): Promise<Message> => {

@@ -7,13 +7,16 @@ import ContactInfo from './ContactInfo'
 import NewContactBanner from './NewContactBanner'
 import ContactSearchPopup from './ContactSearchPopup'
 import { ThreadList } from './ThreadList'
-import ReplyBar from './ReplyBar'
+import ReplyBar, { type RecipientOption } from './ReplyBar'
 import MessageActions from './MessageActions'
 import ContactDetailPanel from '../contacts/ContactDetailPanel'
-import ContactForm, { toNullableString, toNullableNumber } from '../contacts/ContactForm'
+import ContactForm, { toNullableString } from '../contacts/ContactForm'
 import TaskCreateModal from '../tasks/TaskCreateModal'
 import { CalendarModal } from '../calendar/CalendarModal'
 import ForwardModal from './ForwardModal'
+import QuickOrderModal from './QuickOrderModal'
+import { useContactsQuery } from '../../hooks/queries'
+import { useCreateOrderMutation } from '../../hooks/orders'
 import { getMessagesFromCache, saveMessages, getDraft, saveDraft, clearDraft, type DraftAttachment } from '../../offline/db'
 import { SYNC_COMPLETE } from '../../offline/sync'
 import type { ContactFormData } from '../../schemas'
@@ -35,6 +38,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [contact, setContact] = useState<Contact | null>(null)
+  const [recipientOverride, setRecipientOverride] = useState('')
   const displayName = contact?.name || message.contact_name || contactName || 'Неизвестный'
   const [localStatus, setLocalStatus] = useState<'read' | 'unread'>(message.status === 'unread' ? 'unread' : 'read')
   const [localFlag, setLocalFlag] = useState<boolean>(message.is_flagged ?? false)
@@ -49,8 +53,12 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
   const [showContactCard, setShowContactCard] = useState(false)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [eventModalOpen, setEventModalOpen] = useState(false)
+  const [orderModalOpen, setOrderModalOpen] = useState(false)
+  const [orderMessage, setOrderMessage] = useState<Message | null>(null)
   const [forwardTarget, setForwardTarget] = useState<Message | null>(null)
   const [taskMessage, setTaskMessage] = useState<Message | null>(null)
+  const contactsQuery = useContactsQuery()
+  const createOrder = useCreateOrderMutation()
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const threadEndRef = useRef<HTMLDivElement>(null)
@@ -244,6 +252,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
 
   useEffect(() => {
     setContactLoading(true)
+    setRecipientOverride('')
     contactApi.getById(message.contact_id).then(setContact).catch(() => setContact(null))
       .finally(() => setContactLoading(false))
   }, [message.contact_id])
@@ -256,6 +265,33 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
     }
   }, [showContactSearch, message.contact_id])
 
+  const recipientOptions: RecipientOption[] = (() => {
+    if (!contact) return []
+    const seen = new Set<string>()
+    const options: RecipientOption[] = []
+    const add = (value: string | null | undefined, label: string) => {
+      const v = (value ?? '').trim()
+      if (!v || seen.has(v)) return
+      seen.add(v)
+      options.push({ value: v, label: `${label}: ${v}` })
+    }
+    if (message.channel === 'telegram') {
+      add(contact.telegram_id, 'TG ID')
+      add(contact.telegram_username, 'TG @')
+      for (const ident of contact.identifiers ?? []) {
+        if (ident.channel === 'telegram_id') add(ident.value, 'TG ID')
+        else if (ident.channel === 'telegram_username') add(ident.value, 'TG @')
+      }
+    } else if (message.channel === 'email') {
+      add(contact.email, 'Email')
+      for (const ident of contact.identifiers ?? []) {
+        if (ident.channel === 'email') add(ident.value, 'Email')
+      }
+    }
+    return options
+  })()
+  const activeRecipient = recipientOverride || undefined
+
   const handleSend = async () => {
     const content = replyText.trim()
     if (!content && attachments.length === 0) return
@@ -265,16 +301,21 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
       let sent: Message
       if (attachments.length > 0) {
         if (replyTarget) {
-          sent = await sendFileReply(replyTarget.id, content, attachments, message.contact_id)
+          sent = await sendFileReply(replyTarget.id, content, attachments, message.contact_id, activeRecipient)
         } else {
-          sent = await sendFileMessage(message.contact_id, message.channel, content, attachments)
+          sent = await sendFileMessage(message.contact_id, message.channel, content, attachments, activeRecipient)
         }
         setAttachments([])
       } else {
         if (replyTarget) {
-          sent = await sendReplyApi({ message_id: replyTarget.id, content }, message.contact_id)
+          sent = await sendReplyApi(
+            { message_id: replyTarget.id, content, ...(activeRecipient ? { recipient: activeRecipient } : {}) },
+            message.contact_id,
+          )
         } else {
-          sent = await sendMessage({ contact_id: message.contact_id, channel: message.channel, content })
+          sent = await sendMessage(
+            { contact_id: message.contact_id, channel: message.channel, content, ...(activeRecipient ? { recipient: activeRecipient } : {}) },
+          )
         }
       }
       setReplyText('')
@@ -379,6 +420,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
           is_favorite: data.is_favorite ?? undefined,
           life_sphere: toNullableString(data.life_sphere) as Contact['life_sphere'],
           birthday: toNullableString(data.birthday),
+          folder_ids: data.folder_ids,
         })
         await messageApi.update(message.id, { contact_id: newContact.id })
         const updated = await contactApi.getById(newContact.id)
@@ -396,7 +438,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
           is_favorite: data.is_favorite ?? undefined,
           life_sphere: toNullableString(data.life_sphere) as Contact['life_sphere'],
           birthday: toNullableString(data.birthday),
-          folder_id: toNullableNumber(data.folder_id),
+          folder_ids: data.folder_ids,
         })
         const updated = await contactApi.getById(message.contact_id)
         setContact(updated)
@@ -513,6 +555,7 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
           onReply={(msg) => { setReplyTarget(msg); replyInputRef.current?.focus() }}
           onCreateTask={(msg) => { setTaskMessage(msg); setTaskModalOpen(true) }}
           onCreateEvent={() => setEventModalOpen(true)}
+          onCreateOrder={(msg) => { setOrderMessage(msg); setOrderModalOpen(true) }}
           onDeleteMessage={handleDeleteMessage}
           onForward={(msg) => setForwardTarget(msg)}
         />
@@ -536,6 +579,9 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
           onAttachmentsChange={setAttachments}
           onCancelReply={() => setReplyTarget(null)}
           inputRef={replyInputRef}
+          recipientOptions={recipientOptions}
+          recipientValue={recipientOverride}
+          onRecipientChange={setRecipientOverride}
         />
       </div>
 
@@ -573,6 +619,19 @@ function MessageDetail({ message, contactName, onClose, onReplied, onMessageUpda
           onReplied()
         }}
       />
+
+      {orderMessage && (
+        <QuickOrderModal
+          open={orderModalOpen}
+          onClose={() => setOrderModalOpen(false)}
+          messageId={orderMessage.id}
+          contactId={orderMessage.contact_id}
+          contactName={displayName}
+          contacts={contactsQuery.data ?? []}
+          onCreate={async (data) => { await createOrder.mutateAsync(data) }}
+          onCreated={() => { setOrderModalOpen(false); onReplied() }}
+        />
+      )}
 
       <ForwardModal
         open={forwardTarget !== null}

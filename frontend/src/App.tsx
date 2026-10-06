@@ -19,6 +19,8 @@ import { registerQueryClient } from './offline/queryClient'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Inbox = lazy(() => import('./pages/Inbox'))
 const Tasks = lazy(() => import('./pages/Tasks'))
+const Orders = lazy(() => import('./pages/Orders'))
+const Products = lazy(() => import('./pages/Products'))
 const Contacts = lazy(() => import('./pages/Contacts'))
 const Archive = lazy(() => import('./pages/Archive'))
 const CalendarPage = lazy(() => import('./pages/CalendarPage').then(m => ({ default: m.CalendarPage })))
@@ -119,6 +121,8 @@ function AppContent() {
             <Route index element={<Dashboard />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="products" element={<Products />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="archive" element={<Archive />} />
             <Route path="channels" element={<Channels />} />

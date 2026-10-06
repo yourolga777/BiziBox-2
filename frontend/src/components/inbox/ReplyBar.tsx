@@ -8,9 +8,15 @@ function truncate(content: string, max = 60): string {
   return oneLine.length > max ? oneLine.slice(0, max) + '…' : oneLine
 }
 
+export interface RecipientOption {
+  value: string
+  label: string
+}
+
 export default function ReplyBar({
   text, sending, error, replyTarget, attachments,
   onTextChange, onSend, onKeyDown, onAttachmentsChange, onCancelReply, inputRef,
+  recipientOptions, recipientValue, onRecipientChange,
 }: {
   text: string; sending: boolean; error: string | null
   replyTarget: Message | null
@@ -21,6 +27,9 @@ export default function ReplyBar({
   onAttachmentsChange: (files: File[]) => void
   onCancelReply: () => void
   inputRef?: React.RefObject<HTMLInputElement | null>
+  recipientOptions?: RecipientOption[]
+  recipientValue?: string
+  onRecipientChange?: (v: string) => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canSend = sending || (!text.trim() && attachments.length === 0)
@@ -64,6 +73,23 @@ export default function ReplyBar({
               </button>
             </span>
           ))}
+        </div>
+      )}
+
+      {(recipientOptions?.length ?? 0) > 1 && onRecipientChange && (
+        <div className="flex items-center gap-2 mb-2">
+          <label htmlFor="recipient-select" className="text-xs text-gray-500 shrink-0">Получатель:</label>
+          <select
+            id="recipient-select"
+            value={recipientValue ?? ''}
+            onChange={e => onRecipientChange(e.target.value)}
+            className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none focus:border-primary max-w-[320px] truncate"
+          >
+            <option value="">По умолчанию (адрес контакта)</option>
+            {recipientOptions?.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       )}
 

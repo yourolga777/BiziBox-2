@@ -16,6 +16,7 @@ import {
 import Card from '../components/common/Card'
 import PulseWidget from '../components/dashboard/PulseWidget'
 import TasksBoard from '../components/dashboard/TasksBoard'
+import OrdersBoard from '../components/dashboard/OrdersBoard'
 import TaskCreateModal from '../components/tasks/TaskCreateModal'
 import { CalendarModal } from '../components/calendar/CalendarModal'
 import ContactForm, { toNullableString } from '../components/contacts/ContactForm'
@@ -275,6 +276,7 @@ function Dashboard() {
       is_favorite: data.is_favorite ?? undefined,
       life_sphere: toNullableString(data.life_sphere) as Contact['life_sphere'],
       birthday: toNullableString(data.birthday),
+      folder_ids: data.folder_ids,
     })
     setContactModalOpen(false)
   }
@@ -354,6 +356,8 @@ function Dashboard() {
           </Card>
 
           <TasksBoard />
+
+          <OrdersBoard />
         </div>
 
         <div className="space-y-4">

@@ -16,7 +16,7 @@ import ImportDialog from '../components/contacts/ImportDialog'
 import { contactApi } from '../api/client'
 import { useContactsQuery, useContactQuery, useCreateContactMutation, useUpdateContactMutation, useDeleteContactMutation } from '../hooks/queries'
 import type { ContactFormData } from '../schemas'
-import { toNullableNumber, toNullableString } from '../components/contacts/ContactForm'
+import { toNullableString } from '../components/contacts/ContactForm'
 import type { Contact, ContactSortBy, ContactSubsection } from '../types/contact'
 import { contactSphereMeta } from '../types/contactType'
 import { getChannelIcon } from '../utils/channelIcons'
@@ -146,6 +146,7 @@ function Contacts() {
     life_sphere: filter.kind === 'sphere' ? filter.sphere : undefined,
     folder_id: filter.kind === 'folder' ? filter.folderId : undefined,
     is_favorite: filter.kind === 'favorites' ? true : undefined,
+    unclassified: filter.kind === 'other' ? true : undefined,
     sort_by: sortBy,
     sort_order: sortOrder,
     skip: page * PAGE_SIZE,
@@ -242,7 +243,7 @@ function Contacts() {
       is_favorite: formData.is_favorite ?? undefined,
       life_sphere: toNullableString(formData.life_sphere) as Contact['life_sphere'],
       birthday: toNullableString(formData.birthday),
-      folder_id: toNullableNumber(formData.folder_id),
+      folder_ids: formData.folder_ids,
     })
     resetFilters()
     setIsFormOpen(false)
@@ -261,7 +262,7 @@ function Contacts() {
         is_favorite: formData.is_favorite ?? undefined,
         life_sphere: toNullableString(formData.life_sphere) as Contact['life_sphere'],
         birthday: toNullableString(formData.birthday),
-        folder_id: toNullableNumber(formData.folder_id),
+        folder_ids: formData.folder_ids,
       },
     })
     setEditContact(null)
@@ -364,7 +365,6 @@ function Contacts() {
         <FolderSidebar
           selected={filter}
           onSelect={handleSelectFilter}
-          contactId={selectedContactId}
           onDropContact={handleDropContact}
         />
         <DuplicatePanel onMerge={handleBulkMerge} />

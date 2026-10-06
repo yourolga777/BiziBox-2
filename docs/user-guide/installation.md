@@ -7,7 +7,7 @@
 
 ## Portable-версия (рекомендуется)
 
-1. Скачайте `BiziBox.exe` со [страницы релизов](https://github.com/yourolga777/BiziBox/releases).
+1. Скачайте `BiziBox.exe` со [страницы релизов](https://github.com/yourolga777/BiziBox-2/releases/latest).
 2. Поместите файл в любую папку (например, `D:\BiziBox`).
 3. Запустите `BiziBox.exe` — окно консоли не появляется, приложение запускается в фоне и само открывает браузер.
 4. В системном трее появится иконка **BiziBox**: «Открыть BiziBox» / «Выход».

@@ -17,7 +17,13 @@ const defaultData: StepData = {
   login: '',
   telegram: { api_id: '', api_hash: '', phone: '', password_2fa: '', useCustomApi: false },
   email: { email: '', password: '', imap_host: '', smtp_host: '', imap_port: 993, smtp_port: 465 },
-  proxy: { type: 'socks5', host: '', port: '', username: '', password: '', secret: '', useCustomProxy: false },
+  proxy: { mode: 'direct', type: 'socks5', host: '', port: '', username: '', password: '', secret: '' },
+}
+
+const MODE_LABELS: Record<string, string> = {
+  direct: 'Напрямую (без VPN и прокси)',
+  system_vpn: 'Системный VPN',
+  custom_proxy: 'Свой прокси',
 }
 
 function loadProgress(): { step: number; data: StepData } {
@@ -44,8 +50,6 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [apiExpanded, setApiExpanded] = useState(false)
-  const [proxyExpanded, setProxyExpanded] = useState(false)
-  const [serverProxy, setServerProxy] = useState<string>('')
   const prefilledLoginRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -55,21 +59,6 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
     if (saved.data.telegram.useCustomApi) {
       setApiExpanded(true)
     }
-    if (saved.data.proxy.useCustomProxy) {
-      setProxyExpanded(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    settingsApi
-      .onboardingConfig()
-      .then(config => {
-        const px = config.proxy
-        if (px?.host && px?.port) {
-          setServerProxy(`${px.type || 'socks5'}://${px.host}:${px.port}`)
-        }
-      })
-      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -105,10 +94,9 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
               type: px?.type && !prev.proxy.host ? (px.type || prev.proxy.type) : prev.proxy.type,
               host: px?.host && !prev.proxy.host ? px.host : prev.proxy.host,
               port: px?.port != null && !prev.proxy.host ? String(px.port) : prev.proxy.port,
-              useCustomProxy: px?.host ? true : prev.proxy.useCustomProxy,
+              mode: px?.host ? 'custom_proxy' : prev.proxy.mode,
             },
           }))
-          if (px?.host) setProxyExpanded(true)
         })
         .catch(() => {})
     }, 400)
@@ -166,7 +154,8 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
         }
       }
       payload.proxy = {
-        enabled: data.proxy.useCustomProxy,
+        mode: data.proxy.mode,
+        enabled: data.proxy.mode === 'custom_proxy',
         type: data.proxy.type,
         host: data.proxy.host || undefined,
         port: data.proxy.port ? Number(data.proxy.port) : undefined,
@@ -240,15 +229,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
 
           {step === 1 && <EmailStep data={data} updateData={updateData} />}
 
-          {step === 2 && (
-            <ProxyStep
-              data={data}
-              updateData={updateData}
-              expanded={proxyExpanded}
-              setExpanded={setProxyExpanded}
-              serverProxy={serverProxy}
-            />
-          )}
+          {step === 2 && <ProxyStep data={data} updateData={updateData} />}
 
           {step === 3 && (
             <div className="space-y-4">
@@ -278,13 +259,17 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
                     <span>{data.email.email}</span>
                   </div>
                 )}
-                {data.proxy.host && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Сеть (Telegram):</span>
+                  <span className="text-right">{MODE_LABELS[data.proxy.mode] ?? data.proxy.mode}</span>
+                </div>
+                {data.proxy.mode === 'custom_proxy' && data.proxy.host && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Прокси:</span>
-                    <span className="text-right">{data.proxy.type}://{data.proxy.host}:{data.proxy.port} {data.proxy.useCustomProxy ? '(пользовательский)' : '(серверный)'}</span>
+                    <span className="text-right">{data.proxy.type}://{data.proxy.host}:{data.proxy.port}</span>
                   </div>
                 )}
-                {!data.telegram.phone && !data.email.email && !data.proxy.host && (
+                {!data.telegram.phone && !data.email.email && data.proxy.mode === 'direct' && (
                   <p className="text-gray-400 text-center">Не введено ни одного параметра</p>
                 )}
               </div>
@@ -305,7 +290,7 @@ export default function Onboarding({ onComplete }: { onComplete: () => void }) {
             <div className="flex gap-2">
               {step < 3 && (
                 <Button onClick={handleNext} disabled={step === 0 && !isValidLogin(data.login)}>
-                  {step === 2 ? 'Пропустить' : 'Далее'} <ArrowRight className="w-4 h-4 ml-1" />
+                  Далее <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               )}
               {step === 3 && (
