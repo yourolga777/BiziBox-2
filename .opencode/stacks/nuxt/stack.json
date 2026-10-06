@@ -1,6 +1,0 @@
-{
-  "name": "nuxt",
-  "version": "1",
-  "detect": [{ "file": "package.json", "type": "exact", "keyword": "\"nuxt\"" }],
-  "extensions": [".vue", ".ts", ".js"]
-}

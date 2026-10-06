@@ -129,3 +129,18 @@ CLAUDE.md
 Проверки.md
 docs/release-*/
 docs/help/
+
+# Рабочие заметки и чек-листы (do not commit)
+ПЛАН-РЕАЛИЗАЦИИ.md
+ЧЕК-ЛИСТ-ПРОВЕРКА*.md
+тестовый-каталог.csv
+
+# Агентское/dev-окружение
+.opencode/
+.tausik-lib/
+.mcp.json
+opencode.json
+.pre-commit-config.yaml
+
+# Установщик (сборка отключена)
+installer/

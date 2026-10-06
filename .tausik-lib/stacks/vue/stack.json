@@ -1,6 +1,0 @@
-{
-  "name": "vue",
-  "version": "1",
-  "detect": [{ "file": "package.json", "type": "exact", "keyword": "\"vue\"" }],
-  "extensions": [".vue", ".ts", ".js"]
-}
